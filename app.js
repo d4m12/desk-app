@@ -72,7 +72,7 @@
 
   const REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const thoughtIdleIdx = { scanner: 0, auditor: 0, analyst: 0, executor: 0, risk: 0 };
-  const thoughtTimers = { type: null, homeRot: null, idleRot: [] };
+  const thoughtTimers = { type: {}, homeRot: null, idleRot: [] };
   let homeThoughtAgent = "scanner";
   let thoughtBooted = false;
 
@@ -103,33 +103,52 @@
     if (!el) { if (done) done(); return; }
     const textEl = el.querySelector(".tb-text");
     if (!textEl) { if (done) done(); return; }
-    if (thoughtTimers.type) clearInterval(thoughtTimers.type);
-    if (REDUCE_MOTION) {
+    const key = el.dataset.thought || "x";
+    if (thoughtTimers.type[key]) {
+      cancelAnimationFrame(thoughtTimers.type[key]);
+      delete thoughtTimers.type[key];
+    }
+    el.setAttribute("title", full);
+    const curOld = el.querySelector(".tb-cursor");
+    if (curOld) curOld.remove();
+    // Instant text for reduced-motion, fixtures/screenshots, and reliability
+    if (REDUCE_MOTION || FIXTURE || EMPTY) {
       textEl.textContent = full;
-      const cur = el.querySelector(".tb-cursor");
-      if (cur) cur.remove();
       if (done) done();
       return;
     }
-    textEl.textContent = "";
     let i = 0;
-    let cur = el.querySelector(".tb-cursor");
-    if (!cur) {
-      cur = document.createElement("span");
-      cur.className = "tb-cursor";
-      cur.textContent = "▍";
-      el.appendChild(cur);
-    }
-    thoughtTimers.type = setInterval(() => {
-      i += 1;
-      textEl.textContent = full.slice(0, i);
-      if (i >= full.length) {
-        clearInterval(thoughtTimers.type);
-        thoughtTimers.type = null;
-        setTimeout(() => { if (cur && cur.parentNode) cur.remove(); }, 400);
-        if (done) done();
+    textEl.textContent = "";
+    const cur = document.createElement("span");
+    cur.className = "tb-cursor";
+    cur.textContent = "▍";
+    textEl.after(cur);
+    let last = 0;
+    function step(ts) {
+      if (!last) last = ts;
+      // ~60cps
+      const target = Math.min(full.length, Math.floor((ts - last) / 16));
+      if (target > i) {
+        i = target;
+        textEl.textContent = full.slice(0, i);
       }
-    }, 22);
+      if (i >= full.length) {
+        textEl.textContent = full;
+        delete thoughtTimers.type[key];
+        setTimeout(() => { if (cur && cur.parentNode) cur.remove(); }, 300);
+        if (done) done();
+        return;
+      }
+      thoughtTimers.type[key] = requestAnimationFrame(step);
+    }
+    thoughtTimers.type[key] = requestAnimationFrame(step);
+    // safety: never leave bubble empty
+    setTimeout(() => {
+      if (textEl.textContent.length < full.length) {
+        textEl.textContent = full;
+        if (cur && cur.parentNode) cur.remove();
+      }
+    }, 2500);
   }
 
   function bubbleHtml(name, text) {
@@ -194,8 +213,8 @@
         if (head) card.insertBefore(bub, head);
         else card.prepend(bub);
       }
-      // stagger initial reveal
-      setTimeout(() => showBubble(bub, name, true), idx * 180);
+      // stagger initial reveal (per-bubble typewriter keys)
+      setTimeout(() => showBubble(bub, name, true), 120 + idx * 220);
       card.addEventListener("click", (ev) => {
         if (ev.target.closest("[data-toggle]")) return;
         showBubble(bub, name, true);
