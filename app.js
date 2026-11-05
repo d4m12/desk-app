@@ -52,11 +52,11 @@
   };
 
   const TONES = {
-    scanner: { letter: "S", label: "Scanner" },
-    auditor: { letter: "A", label: "Auditor" },
-    analyst: { letter: "N", label: "Analyst" },
-    executor: { letter: "E", label: "Executor" },
-    risk: { letter: "R", label: "Risk" },
+    scanner: { letter: "S", label: "Scanner", badge: "🔭" },
+    auditor: { letter: "A", label: "Auditor", badge: "🔍" },
+    analyst: { letter: "N", label: "Analyst", badge: "🧠" },
+    executor: { letter: "E", label: "Executor", badge: "⚡" },
+    risk: { letter: "R", label: "Risk", badge: "🛡️" },
   };
   const EVENT_AGENT = {
     scan: "scanner",
@@ -95,10 +95,14 @@
   }
 
   function orbHtml(name, running) {
-    const tone = TONES[name] || { letter: "?" };
+    const tone = TONES[name] || { letter: "?", badge: "✨", label: name };
     const mode = agentMode(name, running);
-    return `<div class="agent-orb is-${mode}" data-orb="${name}" data-tone="${name}" data-running="${running === false ? "0" : "1"}">
-      <span class="orb-ring"></span><span class="orb-core">${tone.letter}</span>
+    const label = tone.label || name;
+    return `<div class="agent-orb is-${mode}" data-orb="${name}" data-tone="${name}" data-running="${running === false ? "0" : "1"}" role="img" aria-label="${label} ${mode}">
+      <span class="orb-ring" aria-hidden="true"></span>
+      <span class="orb-face" aria-hidden="true">🤖</span>
+      <span class="orb-badge" aria-hidden="true">${tone.badge || "✨"}</span>
+      <span class="orb-sleep" aria-hidden="true">😴</span>
     </div>`;
   }
 
