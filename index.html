@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#120018">
+  <title>Grok Bot</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <div id="error-banner" class="error-banner hidden"></div>
+    <section id="view-home" class="view"></section>
+    <section id="view-agents" class="view hidden"></section>
+    <section id="view-activity" class="view hidden"></section>
+    <section id="view-account" class="view hidden"></section>
+    <section id="view-auditor" class="view hidden"></section>
+    <section id="view-coin" class="view hidden"></section>
+  </div>
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="home" class="tab active">Home</button>
+    <button data-tab="agents" class="tab">Agents</button>
+    <button data-tab="activity" class="tab">Activity</button>
+    <button data-tab="account" class="tab">Account</button>
+  </nav>
+  <script src="chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
