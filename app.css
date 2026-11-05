@@ -236,3 +236,89 @@ a { color: #f5a9ff; text-decoration: none; }
 .force-hint { font-size:12px; color:var(--secondary); margin:0 0 10px; }
 .force-status { font-size:13px; margin:0 0 8px; color:#ffb3e4; }
 .force-status.on { color:#86efac; }
+
+/* —— Thought bubbles (comic cloud, neon glass) —— */
+.thought-home-stage {
+  position: relative;
+  height: 72px;
+  margin: 0 8px 2px;
+  overflow: visible;
+}
+.thought-bubble {
+  --tb: #ff6ec7;
+  position: absolute;
+  z-index: 5;
+  max-width: min(240px, 72vw);
+  padding: 8px 12px 10px;
+  border-radius: 16px 16px 16px 6px;
+  background: linear-gradient(145deg, rgba(255,45,149,0.22), rgba(124,58,237,0.28));
+  border: 1px solid rgba(255, 140, 220, 0.45);
+  box-shadow: 0 0 16px rgba(168,85,247,0.35), inset 0 0 12px rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffe8fb;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.thought-bubble.is-on {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.thought-bubble .tb-text { display: block; min-height: 1.35em; }
+.thought-bubble .tb-cursor {
+  display: inline-block; width: 0.45em; color: #ffb3e4;
+  animation: tbblink 0.9s step-end infinite;
+}
+.thought-bubble::after,
+.thought-bubble::before {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(255,45,149,0.35), rgba(124,58,237,0.4));
+  border: 1px solid rgba(255,140,220,0.4);
+  box-shadow: 0 0 8px rgba(168,85,247,0.35);
+}
+.thought-bubble::after {
+  width: 10px; height: 10px;
+  left: 14px; bottom: -8px;
+}
+.thought-bubble::before {
+  width: 6px; height: 6px;
+  left: 8px; bottom: -16px;
+}
+.thought-home-stage .thought-bubble {
+  left: 50%;
+  bottom: 8px;
+  transform: translate(-50%, 6px) scale(0.96);
+}
+.thought-home-stage .thought-bubble.is-on {
+  transform: translate(-50%, 0) scale(1);
+}
+
+.orb-mini { position: relative; cursor: pointer; }
+.agent-full, .agent-card { position: relative; }
+.agent-full .thought-bubble,
+.agent-card .thought-bubble {
+  position: relative;
+  left: auto; right: auto; bottom: auto;
+  display: block;
+  margin: 0 0 10px 56px;
+  max-width: calc(100% - 64px);
+  pointer-events: none;
+}
+.agent-full .thought-bubble::after { left: -28px; bottom: 10px; }
+.agent-full .thought-bubble::before { left: -40px; bottom: 4px; }
+.agent-card .thought-bubble::after { left: -28px; bottom: 10px; }
+.agent-card .thought-bubble::before { left: -40px; bottom: 4px; }
+
+@keyframes tbblink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .thought-bubble { transition: opacity 0.2s ease; transform: none !important; }
+  .thought-bubble .tb-cursor { display: none !important; animation: none !important; }
+  .thought-bubble.is-on { opacity: 1; }
+}

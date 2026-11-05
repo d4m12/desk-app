@@ -70,10 +70,193 @@
   const liveUntil = { scanner: 0, auditor: 0, analyst: 0, executor: 0, risk: 0 };
   const WORK_MS = 6000;
 
+  const REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const thoughtIdleIdx = { scanner: 0, auditor: 0, analyst: 0, executor: 0, risk: 0 };
+  const thoughtTimers = { type: null, homeRot: null, idleRot: [] };
+  let homeThoughtAgent = "scanner";
+  let thoughtBooted = false;
+
+  function thoughtCtx() {
+    const s = FIXTURE ? fixtures.state : state;
+    return {
+      agents: (s && s.agents) || defaultAgents(),
+      activity: FIXTURE ? fixtures.activity : (state.activity || []),
+      settings: FIXTURE ? fixtures.settings : (state.settings || {}),
+      forceOff: !!(s && s.forceOff),
+    };
+  }
+
+  function pickThought(name) {
+    const DT = window.DeskThoughts;
+    if (!DT) return "…";
+    const ctx = thoughtCtx();
+    const a = (ctx.agents || []).find((x) => x.name === name);
+    const running = a ? a.running !== false : true;
+    if (ctx.forceOff || !running) return DT.liveLine(name, ctx);
+    const working = agentMode(name, running) === "working";
+    const act = DT.agentFromActivity && (ctx.activity || []).some((r) => DT.agentFromActivity(r) === name);
+    if (working || act) return DT.liveLine(name, ctx);
+    return DT.idleLine(name, thoughtIdleIdx[name] || 0);
+  }
+
+  function typewrite(el, full, done) {
+    if (!el) { if (done) done(); return; }
+    const textEl = el.querySelector(".tb-text");
+    if (!textEl) { if (done) done(); return; }
+    if (thoughtTimers.type) clearInterval(thoughtTimers.type);
+    if (REDUCE_MOTION) {
+      textEl.textContent = full;
+      const cur = el.querySelector(".tb-cursor");
+      if (cur) cur.remove();
+      if (done) done();
+      return;
+    }
+    textEl.textContent = "";
+    let i = 0;
+    let cur = el.querySelector(".tb-cursor");
+    if (!cur) {
+      cur = document.createElement("span");
+      cur.className = "tb-cursor";
+      cur.textContent = "▍";
+      el.appendChild(cur);
+    }
+    thoughtTimers.type = setInterval(() => {
+      i += 1;
+      textEl.textContent = full.slice(0, i);
+      if (i >= full.length) {
+        clearInterval(thoughtTimers.type);
+        thoughtTimers.type = null;
+        setTimeout(() => { if (cur && cur.parentNode) cur.remove(); }, 400);
+        if (done) done();
+      }
+    }, 22);
+  }
+
+  function bubbleHtml(name, text) {
+    return `<div class="thought-bubble" data-thought="${name}" role="status" aria-live="polite"><span class="tb-text"></span></div>`;
+  }
+
+  function showBubble(el, name, immediate) {
+    if (!el) return;
+    const text = pickThought(name);
+    el.dataset.thought = name;
+    el.classList.remove("is-on");
+    const apply = () => {
+      typewrite(el, text, () => el.classList.add("is-on"));
+      // fade on first: add is-on early for reduced motion / visibility
+      if (REDUCE_MOTION || immediate) el.classList.add("is-on");
+      else requestAnimationFrame(() => el.classList.add("is-on"));
+    };
+    if (immediate) apply();
+    else setTimeout(apply, 40);
+  }
+
+  function mountHomeThoughts() {
+    const row = document.querySelector("#view-home .orb-row");
+    if (!row) return;
+    let stage = document.querySelector("#home-thought-stage");
+    if (!stage) {
+      stage = document.createElement("div");
+      stage.id = "home-thought-stage";
+      stage.className = "thought-home-stage";
+      stage.innerHTML = bubbleHtml(homeThoughtAgent, "");
+      row.parentNode.insertBefore(stage, row);
+    }
+    const bub = stage.querySelector(".thought-bubble");
+    showBubble(bub, homeThoughtAgent, true);
+    // tap orb → focus that agent
+    row.querySelectorAll(".orb-mini").forEach((mini) => {
+      const orb = mini.querySelector("[data-orb]");
+      if (!orb) return;
+      mini.onclick = (ev) => {
+        ev.stopPropagation();
+        homeThoughtAgent = orb.dataset.orb;
+        showBubble(bub, homeThoughtAgent, true);
+      };
+    });
+  }
+
+  function mountAgentsThoughts() {
+    const list = document.querySelectorAll("#view-agents .agent-full, #view-agents .orb-mini");
+    // cards
+    document.querySelectorAll("#view-agents .agent-full").forEach((card, idx) => {
+      const orb = card.querySelector("[data-orb]");
+      if (!orb) return;
+      const name = orb.dataset.orb;
+      let bub = card.querySelector(".thought-bubble");
+      if (!bub) {
+        bub = document.createElement("div");
+        bub.className = "thought-bubble";
+        bub.dataset.thought = name;
+        bub.setAttribute("role", "status");
+        bub.innerHTML = '<span class="tb-text"></span>';
+        const head = card.querySelector(".setting-row, .head");
+        if (head) card.insertBefore(bub, head);
+        else card.prepend(bub);
+      }
+      // stagger initial reveal
+      setTimeout(() => showBubble(bub, name, true), idx * 180);
+      card.addEventListener("click", (ev) => {
+        if (ev.target.closest("[data-toggle]")) return;
+        showBubble(bub, name, true);
+      });
+    });
+  }
+
+  function advanceIdleThoughts() {
+    const DT = window.DeskThoughts;
+    if (!DT) return;
+    const now = Date.now();
+    DT.AGENTS.forEach((name, i) => {
+      // each agent advances on its own ~10s cadence, staggered by 2s
+      const period = 10000;
+      const offset = i * 2000;
+      const slot = Math.floor((now - offset) / period);
+      const prev = thoughtIdleIdx["_" + name + "slot"];
+      if (prev === slot) return;
+      thoughtIdleIdx["_" + name + "slot"] = slot;
+      thoughtIdleIdx[name] = (thoughtIdleIdx[name] || 0) + 1;
+      if (view === "home" && name === homeThoughtAgent) {
+        const bub = document.querySelector("#home-thought-stage .thought-bubble");
+        if (bub) showBubble(bub, name, true);
+      }
+      if (view === "agents") {
+        const bub = document.querySelector('#view-agents .thought-bubble[data-thought="' + name + '"]');
+        if (bub) showBubble(bub, name, true);
+      }
+    });
+  }
+
+  function rotateHomeThoughtAgent() {
+    const DT = window.DeskThoughts;
+    if (!DT || view !== "home") return;
+    const names = DT.AGENTS;
+    const ix = names.indexOf(homeThoughtAgent);
+    homeThoughtAgent = names[(ix + 1) % names.length];
+    const bub = document.querySelector("#home-thought-stage .thought-bubble");
+    if (bub) showBubble(bub, homeThoughtAgent, true);
+  }
+
+  function ensureThoughtLoops() {
+    if (thoughtBooted) return;
+    thoughtBooted = true;
+    setInterval(rotateHomeThoughtAgent, 10000);
+    setInterval(advanceIdleThoughts, 9000);
+  }
+
+
   function markWorking(name) {
     if (!name || !(name in liveUntil)) return;
     liveUntil[name] = Date.now() + WORK_MS;
     syncOrbs();
+    if (view === "home" && name === homeThoughtAgent) {
+      const bub = document.querySelector("#home-thought-stage .thought-bubble");
+      if (bub) showBubble(bub, name, true);
+    }
+    if (view === "agents") {
+      const bub = document.querySelector('#view-agents .thought-bubble[data-thought="' + name + '"]');
+      if (bub) showBubble(bub, name, true);
+    }
   }
 
   function agentMode(name, running) {
@@ -338,6 +521,8 @@
         <p class="empty">Nothing yet tonight</p>
       </div>`;
       requestAnimationFrame(() => DeskCharts.lineChart($("#home-chart"), { points: [] }));
+      mountHomeThoughts();
+      ensureThoughtLoops();
       return;
     }
     const s = FIXTURE ? fixtures.state : state;
@@ -373,6 +558,8 @@
     });
     drawActivity($("#home-activity"), (FIXTURE ? fixtures.activity : state.activity).slice(0, 5));
     loadChart("LIVE");
+    mountHomeThoughts();
+    ensureThoughtLoops();
   }
 
   async function loadChart(range) {
@@ -402,6 +589,8 @@
     const el = $("#view-agents");
     if (EMPTY) {
       el.innerHTML = navbar("Agents") + `<div class="screen">${orbRow(defaultAgents())}<p class="empty">Listening for graduations</p></div>`;
+      mountAgentsThoughts();
+      ensureThoughtLoops();
       return;
     }
     const s = FIXTURE ? fixtures.state : state;
@@ -423,6 +612,8 @@
       list.appendChild(card);
       loadDecisions(a.name, card.querySelector("[data-decisions]"));
     });
+    mountAgentsThoughts();
+    ensureThoughtLoops();
   }
 
   async function loadDecisions(name, node) {
