@@ -220,6 +220,12 @@
         showBubble(bub, name, true);
       });
     });
+    if (FIXTURE && params.get("scroll") === "end") {
+      requestAnimationFrame(() => {
+        const cards = document.querySelectorAll("#view-agents .agent-full");
+        if (cards.length) cards[cards.length - 1].scrollIntoView({ block: "end", behavior: "instant" });
+      });
+    }
   }
 
   function advanceIdleThoughts() {

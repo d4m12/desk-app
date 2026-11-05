@@ -46,7 +46,7 @@ a { color: #f5a9ff; text-decoration: none; }
 .error-banner.hidden, .hidden { display: none !important; }
 
 .navbar { display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 12px) var(--gutter) 8px;
-  min-height: 44px; }
+  min-height: 44px; position: relative; z-index: 40; background: rgba(5, 0, 16, 0.72); }
 .navbar .title { font-weight: 600; flex: 1; text-shadow: 0 0 18px rgba(255, 45, 149, 0.35); }
 .avatar { width: 36px; height: 36px; border-radius: 18px; display:flex; align-items:center; justify-content:center; font-size:14px;
   background: linear-gradient(145deg, #ff2d95, #7c3aed); box-shadow: 0 0 14px rgba(255, 45, 149, 0.55); }
@@ -160,15 +160,15 @@ a { color: #f5a9ff; text-decoration: none; }
 .activity-row .right { text-align:right; font-variant-numeric: tabular-nums; }
 .empty { color: var(--secondary); padding: 24px 0; }
 
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0;
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
   display: flex; justify-content: space-around;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-  background: rgba(18, 4, 28, 0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  background: rgba(18, 4, 28, 0.94); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid rgba(232, 121, 249, 0.25); box-shadow: 0 -8px 24px rgba(124, 58, 237, 0.18); }
 .tab { flex:1; min-height: 44px; color: var(--secondary); font-size: 11px; }
 .tab.active { color: #ffb3e4; text-shadow: 0 0 10px rgba(255, 45, 149, 0.65); }
 
-.screen { padding: 0 var(--gutter) 24px; }
+.screen { padding: 0 var(--gutter) calc(28px + env(safe-area-inset-bottom)); }
 .card, .full-card { background: linear-gradient(165deg, rgba(46, 12, 52, 0.94), rgba(12, 4, 22, 0.96));
   border-radius: 16px; padding: 16px; margin: 12px 0;
   border: 1px solid rgba(255, 45, 180, 0.18); box-shadow: 0 0 20px rgba(124, 58, 237, 0.12); }
@@ -247,7 +247,7 @@ a { color: #f5a9ff; text-decoration: none; }
 .thought-bubble {
   --tb: #ff6ec7;
   position: absolute;
-  z-index: 5;
+  z-index: 1; /* below fixed tabbar (100) and navbar (40) */
   max-width: min(240px, 72vw);
   padding: 8px 12px 10px;
   border-radius: 16px 16px 16px 6px;
@@ -305,10 +305,16 @@ a { color: #f5a9ff; text-decoration: none; }
 .agent-card .thought-bubble {
   position: relative;
   left: auto; right: auto; bottom: auto;
+  z-index: 1;
   display: block;
   margin: 0 0 10px 56px;
   max-width: calc(100% - 64px);
   pointer-events: none;
+}
+.agent-full, .agent-card { isolation: isolate; overflow: visible; }
+#view-agents, #view-home, #view-activity, #view-account {
+  position: relative;
+  z-index: 1;
 }
 .agent-full .thought-bubble::after { left: -28px; bottom: 10px; }
 .agent-full .thought-bubble::before { left: -40px; bottom: 4px; }
