@@ -214,3 +214,25 @@ a { color: #f5a9ff; text-decoration: none; }
   .agent-orb.is-idle { box-shadow: 0 0 10px color-mix(in srgb, var(--glow) 50%, transparent); transform: none; }
   .agent-orb.is-paused { filter: grayscale(0.85) brightness(0.7); }
 }
+
+
+.force-bar { display:flex; gap:10px; margin: 4px 0 14px; }
+.force-btn {
+  flex:1; min-height:48px; border-radius:14px; font-weight:700; font-size:15px;
+  letter-spacing:0.02em; cursor:pointer;
+  box-shadow: 0 0 18px rgba(255,45,149,0.35);
+}
+.force-btn.on {
+  background: linear-gradient(135deg, #00d35a 0%, #22c55e 40%, #a855f7 100%);
+  color:#04120a; text-shadow:0 0 8px rgba(255,255,255,0.35);
+  box-shadow: 0 0 22px rgba(0,211,90,0.45), 0 0 12px rgba(168,85,247,0.35);
+}
+.force-btn.off {
+  background: linear-gradient(135deg, #ff1b8d 0%, #c026d3 55%, #7c3aed 100%);
+  color:#fff; box-shadow: 0 0 22px rgba(255,27,141,0.5);
+}
+.force-btn:disabled { opacity:0.55; }
+.force-btn.pending { outline:2px solid #fff; outline-offset:2px; }
+.force-hint { font-size:12px; color:var(--secondary); margin:0 0 10px; }
+.force-status { font-size:13px; margin:0 0 8px; color:#ffb3e4; }
+.force-status.on { color:#86efac; }

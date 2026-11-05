@@ -302,12 +302,33 @@
     </div>`;
   }
 
+
+  let forceOffPending = false;
+  function forceBarHtml(s) {
+    const off = !!(s && s.forceOff);
+    if (PLAN_B) {
+      return `<div class="force-status ${off ? "" : "on"}">${off ? "🛑 FORCE OFF" : "🟢 Agents ON"}</div>
+        <p class="force-hint">Plan B (Pages) est en lecture seule — utilise Telegram · /forceon · /forceoff</p>
+        <div class="force-bar">
+          <button class="force-btn on" disabled>🟢 FORCE ON</button>
+          <button class="force-btn off" disabled>🛑 FORCE OFF</button>
+        </div>`;
+    }
+    return `<div class="force-status ${off ? "" : "on"}">${off ? "🛑 FORCE OFF — desk arrêté" : "🟢 Desk actif"}</div>
+      <div class="force-bar">
+        <button class="force-btn on" data-force="on" ${off ? "" : "disabled"}>🟢 FORCE ON</button>
+        <button class="force-btn off ${forceOffPending ? "pending" : ""}" data-force="off">${forceOffPending ? "✅ Confirmer OFF" : "🛑 FORCE OFF"}</button>
+      </div>
+      ${forceOffPending ? '<p class="force-hint">Retape FORCE OFF pour confirmer (clôture PAPER / liens Sell en LIVE)</p>' : ""}`;
+  }
+
   function renderHome() {
     const el = $("#view-home");
     if (EMPTY) {
       el.innerHTML = navbar("Grok Bot ›") + `<div class="home-pad">
         <div class="balance">$0.00 <span class="pill paper">PAPER</span></div>
         <div class="subrow"><span>+0.00%</span></div>
+        ${forceBarHtml({ forceOff: false })}
         <canvas id="home-chart" class="chart-wrap"></canvas>
         <p class="empty">Waiting for the first trade</p>
         <div class="section-h"><h2>Agents · 5 running</h2></div>
@@ -328,6 +349,7 @@
           <span class="pct ${s.todayPct >= 0 ? "up" : "down"}">${fmtPct(s.todayPct)}</span>
           <span class="pill green">${Number(s.multiplier || 1).toFixed(2)}×</span>
         </div>
+        ${forceBarHtml(s)}
         <canvas id="home-chart" class="chart-wrap"></canvas>
         <div class="ranges">${["LIVE","1H","4H","1D","1W","ALL"].map((r) => `<button data-range="${r}" class="${r==="LIVE"?"on":""}">${r}</button>`).join("")}</div>
         <div class="section-h"><h2>Agents · 5 running</h2></div>
@@ -549,6 +571,25 @@
       if (PLAN_B) return;
       const name = tog.dataset.toggle;
       api("/api/agents/" + name + "/" + (tog.textContent.trim() === "Pause" ? "pause" : "resume"), { method: "POST" });
+    }
+    const force = e.target.closest("[data-force]");
+    if (force) {
+      if (PLAN_B) { showError("Plan B lecture seule — utilise Telegram"); return; }
+      const kind = force.dataset.force;
+      if (kind === "off") {
+        if (!forceOffPending) {
+          forceOffPending = true;
+          paint();
+          return;
+        }
+        forceOffPending = false;
+        api("/api/force/off", { method: "POST" }).then(() => boot()).catch((err) => showError(String(err.message || err)));
+        return;
+      }
+      if (kind === "on") {
+        forceOffPending = false;
+        api("/api/force/on", { method: "POST" }).then(() => boot()).catch((err) => showError(String(err.message || err)));
+      }
     }
   });
 
