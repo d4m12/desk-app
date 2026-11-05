@@ -142,8 +142,18 @@
     return p + "/";
   }
 
+  let planBRoute = "";
+  let planBKey = null;
+  async function initPlanBCrypto() {
+    if (planBKey) return;
+    const encoder = new TextEncoder();
+    const route = await crypto.subtle.digest("SHA-256", encoder.encode("route:" + DATA));
+    planBRoute = Array.from(new Uint8Array(route), (x) => x.toString(16).padStart(2, "0")).join("");
+    const key = await crypto.subtle.digest("SHA-256", encoder.encode("encrypt:" + DATA));
+    planBKey = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["decrypt"]);
+  }
   function planBFile(rel) {
-    return assetBase() + "d/" + encodeURIComponent(DATA) + "/" + rel + "?t=" + Date.now();
+    return assetBase() + "d/" + planBRoute + "/" + rel + "?t=" + Date.now();
   }
 
   function mapPlanB(path) {
@@ -167,11 +177,16 @@
     if (PLAN_B) {
       const method = (opts.method || "GET").toUpperCase();
       if (method !== "GET") throw new Error("Use Telegram to change the desk");
+      await initPlanBCrypto();
       const url = mapPlanB(path);
       if (!url) throw new Error("http 404");
       const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error("http " + res.status);
-      return res.json();
+      const envelope = await res.json();
+      if (envelope.v !== 1 || !envelope.iv || !envelope.data) throw new Error("Invalid encrypted snapshot");
+      const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+      const plaintext = await crypto.subtle.decrypt({name: "AES-GCM", iv: bytes(envelope.iv)}, planBKey, bytes(envelope.data));
+      return JSON.parse(new TextDecoder().decode(plaintext));
     }
     const res = await fetch(path, {
       ...opts,
@@ -499,14 +514,14 @@
     setView("auditor");
     if (FIXTURE || EMPTY) { renderAuditor(); return; }
     try { renderAuditor(await api("/api/audit/" + mint)); }
-    catch (e) { renderAuditor(fixtures.audit); }
+    catch (e) { showError("No snapshot for this coin · retry later"); }
   }
   async function openCoin(mint) {
     currentMint = mint;
     setView("coin");
     if (FIXTURE || EMPTY) { renderCoin(); return; }
     try { renderCoin(await api("/api/coin/" + mint)); }
-    catch (e) { renderCoin(fixtures.coin); }
+    catch (e) { showError("No snapshot for this coin · retry later"); }
   }
 
   document.body.addEventListener("click", (e) => {
@@ -601,9 +616,9 @@
       state.account = acc || {};
       const st = await api("/api/settings");
       state.settings = (st && st.settings) || {};
-      state.lastUpdate = new Date();
+      state.lastUpdate = s.publishedAt ? new Date(s.publishedAt) : new Date();
       state.online = true;
-      if (!FORCE_ERROR) showError("");
+      if (!FORCE_ERROR) showError(PLAN_B ? "Snapshot · " + state.lastUpdate.toLocaleTimeString("fr-FR", {timeZone: "Europe/Paris"}) + " Europe/Paris · refresh ~6 min" : "");
       retry = 3;
       (state.agents || []).forEach((a) => {
         const ts = a.last && a.last.ts;
@@ -623,8 +638,8 @@
     else if (view === "agents") renderAgents();
     else if (view === "activity") renderActivity();
     else if (view === "account") renderAccount();
-    else if (view === "auditor") renderAuditor();
-    else if (view === "coin") renderCoin();
+    else if (view === "auditor") { if (FIXTURE || EMPTY) renderAuditor(); else openAuditor(currentMint); }
+    else if (view === "coin") { if (FIXTURE || EMPTY) renderCoin(); else openCoin(currentMint); }
     else { view = "home"; renderHome(); }
   }
 
