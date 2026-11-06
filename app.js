@@ -423,6 +423,8 @@
       balance: 247.32, todayPct: 23.66, multiplier: 1.2366, mode: "PAPER", paper: true,
       profile: "medium", profileLabel: "Medium — équilibré",
       buysPaused: false, fomo_handle: "Araos",
+      goal:{multiplier:2,start:200,current:247.32,target:400,progressPct:61.83,reachedAt:null},
+      positions: [],
       agents: [
         { name: "scanner", label: "Scanner", running: true, count: 12, unit: "pools" },
         { name: "auditor", label: "Auditor", running: true, count: 4, unit: "taken apart" },
@@ -436,37 +438,14 @@
       points: Array.from({ length: 30 }, (_, i) => ({ t: i, v: 200 + Math.sin(i / 4) * 8 + i * 1.4 })),
       marks: [{ kind: "bought", title: "Bought MWL$", value: "$47.50" }, { kind: "sold", title: "+$12.10", value: "+$12.10" }],
     },
-    activity: [
-      { id: 3, kind: "bought", mint: currentMint, title: "Bought MWL$", subtitle: "Executor · 21:02", value: "$47.50 · 23.75% of stack", link: "#" },
-      { id: 2, kind: "rejected", mint: currentMint, title: "Rejected PEPE2", subtitle: "Auditor · freeze not revoked", value: "Skipped", link: "#" },
-      { id: 1, kind: "sold", mint: currentMint, title: "Sold DOGE3", subtitle: "Risk · trailing stop", value: "+$12.10 · +18.2%", link: "#" },
-    ],
-    coin: {
-      mint: currentMint, name: "Majestic White Lion", symbol: "MWL$", holders: 29,
-      price: 0.00001234, migrated_at: new Date(Date.now() - 11 * 3600 * 1000).toISOString(),
-      shield: "8/8",
-      candles: Array.from({ length: 40 }, (_, i) => {
-        const o = 10 + Math.sin(i / 3); const c = o + (i % 3 ? 0.4 : -0.3);
-        return { t: i, o, h: Math.max(o, c) + 0.3, l: Math.min(o, c) - 0.2, c, v: 20 + i };
-      }),
-      stats: { marketCap: 125000, liquidity: 52000, volume24: 1131 },
-      position: { entry_price: 0.00001, size_usd: 47.5, stop_price: 0.0000094, stop_pct: 6, trail_active: 0, status: "open" },
+    position: {
+      mint: currentMint, name:"Majestic White Lion", symbol:"MWL$", price:0.00001234,
       coin_url: `https://fomo.family/coin?address=${currentMint}&chainId=1399811149&r=Araos&source=share_link`,
-      stopPct: 6, trailPct: 12, trailStartPct: 20,
-    },
-    audit: {
-      mint: currentMint, name: "Majestic White Lion", rejected: false,
-      coin_url: `https://fomo.family/coin?address=${currentMint}&chainId=1399811149&r=Araos&source=share_link`,
-      layers: [
-        { n: 1, name: "Mint authority", pass: true, value: "Revoked" },
-        { n: 2, name: "Freeze authority", pass: true, value: "Revoked" },
-        { n: 3, name: "Dev wallet", pass: true, value: "0.9% · sold 0" },
-        { n: 4, name: "Top 10 holders", pass: true, value: "16.8%" },
-        { n: 5, name: "Liquidity", pass: true, value: "100% locked" },
-        { n: 6, name: "Pool age", pass: true, value: "43m" },
-        { n: 7, name: "Bundled wallets", pass: true, value: "None" },
-        { n: 8, name: "Delegations", pass: true, value: "None" },
-      ],
+      position:{id:1,opened_at:new Date(Date.now()-3600000).toISOString(),entry_price:0.00001,size_usd:47.5,peak_price:0.000014,stop_price:0.000011,stop_pct:6,status:"open",trail_active:1,mode:"PAPER",profile:"medium",source:"veil"},
+      prices:Array.from({length:20},(_,i)=>({ts:new Date(Date.now()-(20-i)*60000).toISOString(),price:0.00001+i*0.0000002})),
+      stops:[{ts:new Date(Date.now()-3600000).toISOString(),stop:0.0000094,peak:0.00001},{ts:new Date(Date.now()-600000).toISOString(),stop:0.000011,peak:0.000014,trail_active:1}],
+      pipeline:[{label:"Scanner trouvé",done:true},{label:"Auditor OK",done:true,value:"8/8"},{label:"Analyst",done:true,value:"Score 75"},{label:"Executor acheté",done:true,value:"PAPER"},{label:"Risk stop suiveur",done:true,value:"Actif"}],
+      why:{analystScore:75,liquidity:52000,source:"veil",layers:[{name:"Mint authority",value:"Revoked",pass:true,source:"chain"},{name:"Top 10 holders",value:"16.8%",pass:true,source:"chain"}]},
     },
     account: {
       mode: "PAPER", stack: 247.32, balance: 247.32, fomo_handle: "Araos",
@@ -651,7 +630,7 @@
         ${goalHtml(s)}
         ${forceBarHtml(s)}
         ${modeBarHtml(s)}
-        <div class="op-card balance-chart"><div class="op-heading"><h3>Solde PAPER</h3><span class="eyebrow">DONNÉES RÉELLES</span></div><canvas id="home-chart" class="chart-wrap"></canvas>
+        <div class="op-card balance-chart"><div class="op-heading"><h3>Solde PAPER</h3>${FIXTURE?'<span class="eyebrow">DÉMO DE MISE EN PAGE</span>':'<span class="eyebrow">DONNÉES RÉELLES</span>'}</div><canvas id="home-chart" class="chart-wrap"></canvas>
         <div class="ranges">${["LIVE","1H","4H","1D","1W","ALL"].map((r) => `<button data-range="${r}" class="${r==="LIVE"?"on":""}">${r === "LIVE" ? "NUIT" : r}</button>`).join("")}</div></div>
         <div class="section-h"><h2>Les agents</h2><span data-go="agents">Voir tout</span></div>
         ${orbRow(s.agents)}
@@ -737,7 +716,7 @@
       <div class="setting-row"><span>Solde PAPER</span><span class="num">${fmtMoney(acc.stack??acc.balance)} ${paperBadge()}</span></div>
       <a class="setting-row" href="${esc(acc.profile_url||"#")}" target="_blank" rel="noopener"><span>Ton profil FOMO</span><span>@${esc(acc.fomo_handle||"Araos")}</span></a>
       <button class="setting-row" id="invite" style="width:100%"><span>Inviter un ami</span><span>Partager</span></button>
-      <div class="setting-row"><span>Notifications</span><span>${PLAN_B?"Telegram":"Connectées"}</span></div>
+      <div class="setting-row"><span>Notifications</span><span>${PLAN_B?"Telegram only":"Telegram connecté"}</span></div>
       <h2>Réglages</h2>${keys.map(k=>PLAN_B?`<div class="setting-row"><span>${esc(k)}</span><span class="num">${esc(sets[k])}</span></div>`:`<div class="setting-row"><span>${esc(k)}</span><input data-key="${esc(k)}" value="${esc(sets[k])}"></div>`).join("")}
       ${PLAN_B?'<p class="empty">Modifie les réglages via Telegram.</p>':""}
       <p class="empty">${esc((acc.liveGate&&acc.liveGate.message)||"")}</p>
@@ -948,43 +927,31 @@
   }
 
   async function boot() {
-    if (FORCE_ERROR) {
-      showError("Desk offline · retrying in 5s · last update never");
-    }
+    if (FORCE_ERROR) showError("Desk hors ligne · nouvel essai dans 5 s");
     if (FIXTURE || EMPTY) {
-      Object.assign(state, fixtures.state);
-      state.activity = fixtures.activity;
-      state.account = fixtures.account;
-      state.settings = fixtures.settings;
-      paint();
-      return;
+      Object.assign(state, fixtures.state); state.activity=fixtures.activity; state.account=fixtures.account; state.settings=fixtures.settings;
+      if(view==="coin")openPosition(currentPositionId);else paint(); return;
     }
     try {
-      const s = await api("/api/state");
-      Object.assign(state, s);
-      const act = await api("/api/activity");
-      state.activity = (act && act.rows) || [];
-      const acc = await api("/api/account");
-      state.account = acc || {};
-      const st = await api("/api/settings");
-      state.settings = (st && st.settings) || {};
-      const positions = await api("/api/positions");
-      state.positions = (positions && positions.rows) || [];
-      state.lastUpdate = s.publishedAt ? new Date(s.publishedAt) : new Date();
-      state.online = true;
-      if (!FORCE_ERROR) showError(PLAN_B ? "Snapshot · " + state.lastUpdate.toLocaleTimeString("fr-FR", {timeZone: "Europe/Paris"}) + " Europe/Paris · refresh ~6 min" : "");
-      retry = 3;
-      (state.agents || []).forEach((a) => {
-        const ts = a.last && a.last.ts;
-        if (!ts) return;
-        const parsed = Date.parse(ts);
-        if (!Number.isNaN(parsed) && Date.now() - parsed < WORK_MS) markWorking(a.name);
+      const s=await api("/api/state");
+      if(!FORCE_ERROR){
+        const results=await Promise.all(["/api/activity","/api/account","/api/settings","/api/positions"].map(path=>api(path)));
+        Object.assign(state,s);
+        state.activity=results[0].rows||[];state.account=results[1]||{};state.settings=results[2].settings||{};state.positions=results[3].rows||[];
+      } else Object.assign(state,s);
+      state.lastUpdate=s.publishedAt?new Date(s.publishedAt):new Date();state.online=true;
+      if(!FORCE_ERROR)showError(PLAN_B?"Snapshot · "+state.lastUpdate.toLocaleTimeString("fr-FR",{timeZone:"Europe/Paris"})+" Europe/Paris · actualisation chiffrée":"");
+      retry=3;
+      (state.agents||[]).forEach(a=>{
+        const ts=a.last&&a.last.ts;if(!ts)return;
+        const parsed=Date.parse(ts);
+        if(Number.isNaN(parsed))return;
+        // The snapshot can be six minutes old: an old decision must not look live.
+        const age=Date.now()-parsed;
+        if(age<WORK_MS && age>=0) markWorking(a.name);
       });
-      paint();
-    } catch (e) {
-      paint();
-      retryError();
-    }
+      if(view==="coin")openPosition(currentPositionId);else paint();
+    } catch(e){if(view!=="coin")paint();retryError();}
   }
 
   function paint() {

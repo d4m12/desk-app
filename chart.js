@@ -21,7 +21,7 @@
       ctx.setLineDash([]);
       ctx.fillStyle = "rgba(245,169,255,0.7)";
       ctx.font = "14px -apple-system, sans-serif";
-      ctx.fillText("Waiting for the first trade", 12, y - 12);
+      ctx.fillText("En attente du premier trade", 12, y - 12);
       return;
     }
     const vals = points.map((p) => p.v);
@@ -77,7 +77,7 @@
     if (!rows || !rows.length) {
       ctx.fillStyle = "rgba(245,169,255,0.7)";
       ctx.font = "14px -apple-system, sans-serif";
-      ctx.fillText("No candles yet", 12, h / 2);
+      ctx.fillText("Pas encore de prix enregistré", 12, h / 2);
       return;
     }
     const highs = rows.map((r) => r.h), lows = rows.map((r) => r.l);
@@ -125,5 +125,45 @@
     ctx.fillText(String(score ?? "–"), cx, cy);
   }
 
-  global.DeskCharts = { lineChart, candles, scoreRing };
+  function positionChart(canvas, { points, stops, entry, position }) {
+    const ctx=canvas.getContext("2d"),{w,h}=dpr(ctx,canvas);
+    ctx.clearRect(0,0,w,h);
+    const left=8,right=Math.max(48,w-48),top=20,bottom=26;
+    if(!points||!points.length){
+      ctx.fillStyle="rgba(242,220,255,.6)";ctx.font="12px -apple-system, sans-serif";
+      ctx.fillText("Historique de prix indisponible",left,h/2);return;
+    }
+    const first=Date.parse(points[0].ts)||0,last=Date.parse(points[points.length-1].ts)||first+1;
+    const firstStop=Date.parse(stops[0]&&stops[0].ts)||first;
+    const start=Math.min(first,firstStop,Date.parse(position.opened_at)||first);
+    const end=Math.max(last,Date.parse(position.closed_at)||last,start+1);
+    const xs=(ts)=>left+(Date.parse(ts)-start)/(end-start)*(right-left);
+    let all=points.map(p=>Number(p.price)).concat(stops.map(s=>Number(s.stop)),[Number(entry),Number(position.peak_price)]);
+    all=all.filter(n=>Number.isFinite(n)&&n>0);
+    let min=Math.min(...all),max=Math.max(...all);
+    if(min===max){min*=0.95;max*=1.05;}
+    const range=max-min;min=Math.max(0,min-range*.12);max+=range*.16;
+    const ys=v=>top+(max-v)/(max-min)*(h-top-bottom);
+    function horizontal(value,color,dash,label){
+      if(!Number.isFinite(Number(value))||value<=0)return;
+      const y=ys(Number(value));ctx.setLineDash(dash);ctx.strokeStyle=color;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle=color;ctx.font="10px -apple-system, sans-serif";ctx.fillText(label,right+5,y+3);
+    }
+    horizontal(entry,"rgba(180,139,255,.9)",[5,5],"Entrée");
+    if(stops.length){ctx.strokeStyle="#ffbe5c";ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.beginPath();
+      stops.forEach((s,i)=>{const x=xs(s.ts),y=ys(Number(s.stop));if(i===0)ctx.moveTo(x,y);else{ctx.lineTo(x,y);ctx.lineTo(x,y);}ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);}
+    ctx.strokeStyle="#ff4ecd";ctx.lineWidth=2.5;ctx.shadowColor="#ff2d95";ctx.shadowBlur=10;ctx.beginPath();
+    points.forEach((p,i)=>{const x=xs(p.ts),y=ys(Number(p.price));if(!i)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.stroke();ctx.shadowBlur=0;
+    function marker(ts,price,color,label){const x=xs(ts),y=ys(price);ctx.fillStyle=color;ctx.strokeStyle="#11051b";ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.font="10px -apple-system, sans-serif";ctx.fillText(label,Math.max(2,x-16),Math.max(11,y-10));}
+    marker(points[0].ts,points[0].price,"#b48bff","ACHAT");
+    if(position.closed_at&&position.exit_price!=null){const x=xs(position.closed_at);ctx.strokeStyle="#ff687c";ctx.setLineDash([2,4]);
+      ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,h-bottom);ctx.stroke();ctx.setLineDash([]);marker(position.closed_at,position.exit_price,"#ff687c","SORTIE");}
+    ctx.fillStyle="rgba(242,220,255,.5)";ctx.font="10px -apple-system, sans-serif";
+    const a=new Date(start).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),b=new Date(end).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+    ctx.fillText(a,left,h-5);const bw=ctx.measureText(b).width;ctx.fillText(b,right-bw,h-5);
+  }
+
+  global.DeskCharts = { lineChart, candles, scoreRing, positionChart };
 })(window);
