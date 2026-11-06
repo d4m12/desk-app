@@ -584,12 +584,12 @@
     const at = reached ? new Date(reached).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"}) : null;
     return `<section class="op-card goal-card ${reached ? "goal-reached" : ""}">
       <div class="op-heading"><div><span class="eyebrow">OBJECTIF DE LA NUIT</span><h3>${reached ? "Objectif atteint" : "Cap sur la nuit"} ${paperBadge()}</h3></div>
-      ${PLAN_B ? `<span class="goal-x">×${Number(g.multiplier).toLocaleString("fr-FR")}</span>` : `<select id="goal-multiplier" aria-label="Objectif de la nuit">${targetOptions.map((x) => `<option value="${x}" ${Number(g.multiplier) === x ? "selected" : ""}>×${String(x).replace(".", ",")}</option>`).join("")}</select>`}</div>
+      ${PLAN_B ? `<span class="goal-x">×${Number(g.multiplier).toLocaleString("fr-FR")}</span>` : `<select class="goal-multiplier" aria-label="Objectif de la nuit">${targetOptions.map((x) => `<option value="${x}" ${Number(g.multiplier) === x ? "selected" : ""}>×${String(x).replace(".", ",")}</option>`).join("")}</select>`}</div>
       <div class="goal-values"><strong>${moneyOdo(g.current)}</strong><span>sur ${Number(g.target).toLocaleString("fr-FR",{minimumFractionDigits:2})} $</span></div>
       <div class="progress-track" role="progressbar" aria-label="Progression de l'objectif" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(g.progressPct)}"><div style="width:${Math.max(0,Math.min(100,g.progressPct))}%"></div></div>
       <div class="goal-foot"><span>${Number(g.progressPct).toFixed(1).replace(".",",")} % · départ ${Number(g.start).toFixed(2)} $</span>
       <span>${reached ? `✓ atteint à ${at}` : paperBadge()}</span></div>
-      ${PLAN_B ? '<p class="tiny-hint">Lecture seule · « set goal 2 » dans Telegram pour modifier.</p>' : compact ? "" : '<p class="tiny-hint">Progression réelle sur le solde du soir · aucun gain simulé.</p>'}
+      ${PLAN_B ? '<p class="tiny-hint">Lecture seule · « set goal 2 » dans Telegram pour modifier.</p>' : compact ? "" : '<p class="tiny-hint">Progression calculée sur le solde PAPER enregistré · pas de gains inventés.</p>'}
     </section>`;
   }
 
@@ -770,7 +770,7 @@
       <div class="detail-hero"><div><span class="eyebrow">${open?"POSITION OUVERTE":"TRADE CLÔTURÉ"}</span><h1>${esc(c.name||c.symbol||"Position")} <small>${esc(c.symbol||"")}</small></h1></div>${paperBadge()}</div>
       <div class="detail-price"><span>${last?"Dernier prix enregistré":"Prix d'entrée"}</span><strong>${displayPrice(last?last.price:p.entry_price)}</strong></div>
       <div class="op-card chart-card"><canvas id="position-chart" class="chart-wrap"></canvas><div class="chart-legend"><span class="price-key">─ Prix réel</span><span class="entry-key">┄ Entrée</span><span class="stop-key">┄ Stop Risk</span></div>${!(c.prices||[]).length?'<p class="empty">Historique de prix indisponible pour cette position. Seuls les chiffres enregistrés sont affichés.</p>':""}${c.historyLimited?'<p class="tiny-hint">Ce trade est antérieur à l’enregistrement détaillé du stop : seul son niveau initial est retracé.</p>':""}</div>
-      <div class="metrics-grid"><div><span>Entrée</span><strong>${displayPrice(p.entry_price)}</strong><small>${timeFR(p.opened_at)}</small></div><div><span>Pic enregistré</span><strong>${displayPrice(p.peak_price)}</strong><small>${c.stops&&c.stops.some(s=>s.trail_active)?"Stop suiveur activé":"Stop suiveur non activé"}</small></div><div><span>Stop actuel / final</span><strong>${displayPrice(p.stop_price)}</strong><small>−${Number(p.stop_pct||0).toFixed(1).replace(".",",")} % initial</small></div><div><span>${open?"Montant PAPER":"Sortie"}</span><strong class="${pnl>0?"up":pnl<0?"down":""}">${open?Number(p.size_usd).toFixed(2).replace(".",",")+" $":displayPrice(p.exit_price)}</strong><small>${open?paperBadge():esc(EXIT_LABELS[p.exit_reason]||p.exit_reason||"—")+" · "+timeFR(p.closed_at)}</small></div></div>
+      <div class="metrics-grid"><div><span>Entrée</span><strong>${displayPrice(p.entry_price)}</strong><small>${timeFR(p.opened_at)}</small></div><div><span>Pic enregistré</span><strong>${displayPrice(p.peak_price)}</strong><small>${p.trail_active ? "Stop suiveur activé" : "Stop suiveur non activé"}</small></div><div><span>Stop actuel / final</span><strong>${displayPrice(p.stop_price)}</strong><small>niveau initial −${Number(p.stop_pct||0).toFixed(1).replace(".",",")} %${c.historyLimited ? " · historique partiel" : ""}</small></div><div><span>${open?"Montant PAPER":"Sortie"}</span><strong class="${pnl>0?"up":pnl<0?"down":""}">${open?Number(p.size_usd).toFixed(2).replace(".",",")+" $":displayPrice(p.exit_price)}</strong><small>${open?paperBadge():esc(EXIT_LABELS[p.exit_reason]||p.exit_reason||"—")+" · "+timeFR(p.closed_at)}</small></div></div>
       ${!open?`<div class="op-card pnl-banner ${pnl>=0?"positive":"negative"}"><div><span>PNL RÉEL PAPER</span><strong>${pnl==null?"—":(pnl>=0?"+":"−")+Math.abs(pnl).toFixed(2).replace(".",",")+" $"}</strong></div><div><span>Frais simulés</span><strong>${Number(p.fees_usd||0).toFixed(2).replace(".",",")+" $"}</strong></div></div>`:paperBadge()}
       <section class="op-card"><div class="op-heading"><h3>Pipeline du trade</h3><span class="eyebrow">JOURNAL RÉEL</span></div>${pipelineHtml(c.pipeline)}</section>
       ${whyHtml(c)}
@@ -802,7 +802,7 @@
   }
 
   document.body.addEventListener("change", async (e) => {
-    const select=e.target.closest("#goal-multiplier");
+    const select=e.target.closest(".goal-multiplier");
     if(!select||PLAN_B) return;
     try { await api("/api/settings",{method:"POST",body:JSON.stringify({key:"desk.night_goal",value:select.value})}); await boot(); }
     catch(err){showError("Objectif non modifié : "+err.message);}
