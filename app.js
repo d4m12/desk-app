@@ -37,6 +37,7 @@
   const FORCE_ERROR = params.get("error") === "1";
   let view = params.get("v") || h.v || "home";
   let currentMint = params.get("mint") || "SoDemoMint111111111111111111111111111111111";
+  let currentPositionId = Number(params.get("position")) || 1;
 
   const state = {
     balance: 0,
@@ -45,6 +46,7 @@
     mode: "PAPER", profile: "medium", profileLabel: "Medium — équilibré",
     agents: [],
     activity: [],
+    positions: [],
     account: {},
     settings: {},
     online: true,
@@ -68,7 +70,7 @@
     exit: "risk",
   };
   const liveUntil = { scanner: 0, auditor: 0, analyst: 0, executor: 0, risk: 0 };
-  const WORK_MS = 6000;
+  const WORK_MS = 60000;
 
   const REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const thoughtIdleIdx = { scanner: 0, auditor: 0, analyst: 0, executor: 0, risk: 0 };
@@ -291,9 +293,9 @@
   }
 
   function modeLabel(mode) {
-    if (mode === "working") return "Working";
-    if (mode === "paused") return "Paused";
-    return "Idle";
+    if (mode === "working") return "Réfléchit";
+    if (mode === "paused") return "En pause";
+    return "Veille";
   }
 
   function defaultAgents() {
@@ -373,6 +375,9 @@
     if (raw === "/api/state") return planBFile("state.json");
     if (raw === "/api/chart") return planBFile("chart.json");
     if (raw === "/api/activity") return planBFile("activity.json");
+    if (raw === "/api/positions") return planBFile("positions.json");
+    let pm = raw.match(/^\/api\/position\/(\d+)$/);
+    if (pm) return planBFile("position/" + encodeURIComponent(pm[1]) + ".json");
     if (raw === "/api/account") return planBFile("account.json");
     if (raw === "/api/settings") return planBFile("settings.json");
     let m = raw.match(/^\/api\/coin\/(.+)$/);
@@ -382,6 +387,10 @@
     m = raw.match(/^\/api\/agents\/([^/]+)\/decisions$/);
     if (m) return planBFile("agents/" + encodeURIComponent(m[1]) + ".json");
     return null;
+  }
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
 
   async function api(path, opts = {}) {
@@ -487,6 +496,7 @@
   function setView(name) {
     view = name;
     $$(".view").forEach((v) => v.classList.add("hidden"));
+    $("#tabbar").classList.toggle("hidden",name==="coin");
     const node = $("#view-" + name);
     if (node) node.classList.remove("hidden");
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
@@ -558,63 +568,106 @@
     </div>${hint}`;
   }
 
+  function paperBadge() { return '<span class="pill paper">PAPER · SIM</span>'; }
+
+  function animateNumbers() {
+    $$('[data-count-to]').forEach((el) => {
+      const to = Number(el.dataset.countTo);
+      if (!Number.isFinite(to) || REDUCE_MOTION) return;
+      const dp = Number(el.dataset.decimals || 0);
+      const money = el.dataset.money === "1";
+      const signed = el.dataset.signed === "1";
+      const start = performance.now();
+      function frame(now) {
+        if (!el.isConnected) return;
+        const p = Math.min(1, (now - start) / 700);
+        const eased = 1 - Math.pow(1 - p, 3);
+        const n = to * eased;
+        const formatted = n.toLocaleString("fr-FR", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+        el.textContent = money ? (signed && n >= 0 ? "+" : "") + formatted.replace("-", "−") + " $" : formatted;
+        if (p < 1) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function moneyOdo(n, decimals = 2, signed = false) {
+    if (n == null || !Number.isFinite(Number(n))) return "—";
+    const d = Number(n);
+    return `<span data-count-to="${d}" data-decimals="${decimals}" data-money="1" ${signed ? 'data-signed="1"' : ""}>${d >= 0 && signed ? "+" : ""}${Number(d).toFixed(decimals).replace(".", ",")} $</span>`;
+  }
+
+  function goalHtml(s, compact = false) {
+    const g = s.goal;
+    if (!g) return '<div class="op-card goal-card"><h3>Objectif de la nuit</h3><p class="empty">En attente du solde PAPER.</p></div>';
+    const targetOptions = [1.5, 2, 3, 5];
+    const reached = g.reachedAt;
+    const at = reached ? new Date(reached).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"}) : null;
+    return `<section class="op-card goal-card ${reached ? "goal-reached" : ""}">
+      <div class="op-heading"><div><span class="eyebrow">OBJECTIF DE LA NUIT</span><h3>${reached ? "Objectif atteint" : "Cap sur la nuit"} ${paperBadge()}</h3></div>
+      ${PLAN_B ? `<span class="goal-x">×${Number(g.multiplier).toLocaleString("fr-FR")}</span>` : `<select id="goal-multiplier" aria-label="Objectif de la nuit">${targetOptions.map((x) => `<option value="${x}" ${Number(g.multiplier) === x ? "selected" : ""}>×${String(x).replace(".", ",")}</option>`).join("")}</select>`}</div>
+      <div class="goal-values"><strong>${moneyOdo(g.current)}</strong><span>sur ${Number(g.target).toLocaleString("fr-FR",{minimumFractionDigits:2})} $</span></div>
+      <div class="progress-track" role="progressbar" aria-label="Progression de l'objectif" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(g.progressPct)}"><div style="width:${Math.max(0,Math.min(100,g.progressPct))}%"></div></div>
+      <div class="goal-foot"><span>${Number(g.progressPct).toFixed(1).replace(".",",")} % · départ ${Number(g.start).toFixed(2)} $</span>
+      <span>${reached ? `✓ atteint à ${at}` : paperBadge()}</span></div>
+      ${PLAN_B ? '<p class="tiny-hint">Lecture seule · « set goal 2 » dans Telegram pour modifier.</p>' : compact ? "" : '<p class="tiny-hint">Progression réelle sur le solde du soir · aucun gain simulé.</p>'}
+    </section>`;
+  }
+
+  function timeFR(ts) {
+    if (!ts) return "—";
+    return new Date(ts).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"});
+  }
+  const EXIT_LABELS = {stop:"stop",trail:"stop suiveur",timeout:"temps limite",pulled:"liquidité retirée",force_off:"FORCE OFF",take_profit:"prise de profit"};
+  function positionCard(p) {
+    const open = !p.closed_at && ["open","exiting"].includes(p.status);
+    const pnl = p.pnl_usd;
+    return `<button class="op-card position-card" data-position="${Number(p.id)}">
+      <div class="position-top"><div><span class="status-dot ${open ? "live" : ""}"></span><strong>${open ? "Position ouverte" : "Trade clôturé"}</strong><span class="profile-tag">${esc(p.profile || "paper")}</span></div><span>${timeFR(p.opened_at)} ›</span></div>
+      <div class="position-symbol">${esc(p.symbol || (p.coin && p.coin.symbol) || "Position")}</div>
+      <div class="position-numbers"><span>${Number(p.size_usd).toFixed(2).replace(".",",")} $ engagés</span><strong class="${pnl > 0 ? "up" : pnl < 0 ? "down" : ""}">${open ? (p.peak_price != null ? "pic " + fmtSmall(p.peak_price) + " $" : "Suivi Risk") : (pnl == null ? "PnL —" : (pnl >= 0 ? "+" : "−") + Math.abs(pnl).toFixed(2).replace(".",",") + " $")}</strong></div>
+      <div class="position-foot">${open ? (p.trail_active ? "◈ Stop suiveur actif" : "◈ Stop fixe surveillé") : `${esc(EXIT_LABELS[p.exit_reason] || p.exit_reason || "Vente enregistrée")}`}<span>${paperBadge()}</span></div>
+    </button>`;
+  }
+  function fmtSmall(n) {
+    if (n == null || !Number.isFinite(Number(n)) || Number(n) === 0) return "—";
+    return Number(n).toPrecision(3);
+  }
+  function unitFR(name) { return {scanner:"coins scannés",auditor:"coins audités",analyst:"scores",executor:"trades",risk:"sorties"}[name] || ""; }
   function renderHome() {
     const el = $("#view-home");
     if (EMPTY) {
-      el.innerHTML = navbar("Grok Bot ›") + `<div class="home-pad">
-        <div class="balance">$0.00 <span class="pill paper">PAPER</span></div>
-        <div class="subrow"><span>+0.00%</span></div>
-        ${forceBarHtml({ forceOff: false })}
-        ${modeBarHtml({ profile: "medium", profileLabel: "Medium — équilibré" })}
-        <canvas id="home-chart" class="chart-wrap"></canvas>
-        <p class="empty">Waiting for the first trade</p>
-        <div class="section-h"><h2>Agents · 5 running</h2></div>
-        ${orbRow(defaultAgents())}
-        <div class="agent-card"><div class="agent-card-head">${orbHtml("scanner", true)}<div><h3>Scanner</h3><div class="orb-status idle">Idle</div></div></div><div class="meta">Listening for graduations</div></div>
-        <div class="section-h"><h2>Activity</h2></div>
-        <p class="empty">Nothing yet tonight</p>
-      </div>`;
-      requestAnimationFrame(() => DeskCharts.lineChart($("#home-chart"), { points: [] }));
-      mountHomeThoughts();
-      ensureThoughtLoops();
-      return;
+      el.innerHTML = navbar("Grok Bot ›") + `<div class="home-pad"><div class="balance">0,00 $ ${paperBadge()}</div><p class="empty">En attente des données PAPER.</p>${goalHtml({})}${forceBarHtml({forceOff:false})}${modeBarHtml({profile:"medium"})}<canvas id="home-chart" class="chart-wrap"></canvas><div class="section-h"><h2>Agents</h2></div>${orbRow(defaultAgents())}<div class="section-h"><h2>Positions</h2></div><p class="empty">Aucun trade pour le moment.</p></div>`;
+      requestAnimationFrame(() => DeskCharts.lineChart($("#home-chart"), { points: [] })); mountHomeThoughts(); ensureThoughtLoops(); return;
     }
     const s = FIXTURE ? fixtures.state : state;
-    const paper = (s.mode || "PAPER") === "PAPER";
-    el.innerHTML = navbar("Grok Bot ›", `<input class="search" placeholder="Search name, symbol or mint" id="search">`) +
+    const positions = FIXTURE ? [] : (s.positions || []);
+    el.innerHTML = navbar("Grok Bot ›", '<span class="live-label"><i></i> TEMPS RÉEL</span>') +
       `<div class="home-pad">
-        <div class="balance num">${fmtMoney(s.balance)} ${paper ? '<span class="pill paper">PAPER</span>' : ""}</div>
-        <div class="subrow">
-          <span class="pct ${s.todayPct >= 0 ? "up" : "down"}">${fmtPct(s.todayPct)}</span>
-          <span class="pill green">${Number(s.multiplier || 1).toFixed(2)}×</span>
-        </div>
+        <div class="eyebrow">SOLDE DE LA NUIT</div>
+        <div class="balance num">${moneyOdo(s.balance)} <span class="balance-badge">${paperBadge()}</span></div>
+        <div class="subrow"><span class="pct ${s.todayPct >= 0 ? "up" : "down"}"><span data-count-to="${Number(s.todayPct||0)}" data-decimals="2" data-signed="1">${Number(s.todayPct||0).toFixed(2).replace(".",",")}</span> %</span>
+        <span class="pill neutral">${Number(s.multiplier||1).toFixed(2).replace(".",",")}× du départ</span>${paperBadge()}</div>
+        ${goalHtml(s)}
         ${forceBarHtml(s)}
         ${modeBarHtml(s)}
-        <canvas id="home-chart" class="chart-wrap"></canvas>
-        <div class="ranges">${["LIVE","1H","4H","1D","1W","ALL"].map((r) => `<button data-range="${r}" class="${r==="LIVE"?"on":""}">${r}</button>`).join("")}</div>
-        <div class="section-h"><h2>Agents · 5 running</h2></div>
+        <div class="op-card balance-chart"><div class="op-heading"><h3>Solde PAPER</h3><span class="eyebrow">DONNÉES RÉELLES</span></div><canvas id="home-chart" class="chart-wrap"></canvas>
+        <div class="ranges">${["LIVE","1H","4H","1D","1W","ALL"].map((r) => `<button data-range="${r}" class="${r==="LIVE"?"on":""}">${r === "LIVE" ? "NUIT" : r}</button>`).join("")}</div></div>
+        <div class="section-h"><h2>Les agents</h2><span data-go="agents">Voir tout</span></div>
         ${orbRow(s.agents)}
+        <div class="op-card scan-card"><span class="scan-icon">✦</span><div><strong>${Number((s.agents.find((a)=>a.name==="scanner")||{}).count || 0)}</strong> <span>coins scannés cette nuit</span></div><span class="pulse-line"></span></div>
         <div class="carousel" id="carousel"></div>
-        <div class="section-h"><h2>Activity</h2><span data-go="activity">See all</span></div>
+        <div class="section-h"><h2>Positions <small>${paperBadge()}</small></h2><span data-go="activity">Historique</span></div>
+        <div class="positions-list">${positions.length ? positions.slice(0,5).map(positionCard).join("") : '<div class="op-card empty-card">Aucun trade PAPER ouvert ou clôturé pour le moment.</div>'}</div>
+        <div class="section-h"><h2>Activité</h2><span data-go="activity">Tout voir</span></div>
         <div id="home-activity"></div>
       </div>`;
     const carousel = $("#carousel");
     (s.agents || defaultAgents()).forEach((a) => {
-      const mode = agentMode(a.name, a.running);
-      const card = document.createElement("div");
-      card.className = "agent-card";
-      card.innerHTML = `<div class="agent-card-head">${orbHtml(a.name, a.running)}<div>
-        <h3>${a.label}</h3>
-        <div class="orb-status ${mode}">${modeLabel(mode)}</div>
-      </div></div>
-        <div class="meta">${a.count} ${a.unit}</div>
-        <div class="feed"><div class="row"><span>${a.label} is ${a.running ? "running" : "paused"}</span></div></div>`;
-      carousel.appendChild(card);
+      carousel.insertAdjacentHTML("beforeend", `<div class="agent-card"><div class="agent-card-head">${orbHtml(a.name,a.running)}<div><h3>${esc(a.label)}</h3><div class="orb-status ${agentMode(a.name,a.running)}">${modeLabel(agentMode(a.name,a.running))}</div></div></div><div class="agent-count"><strong data-count-to="${a.count}">${a.count}</strong><span>${unitFR(a.name)}</span></div><div class="status-line"><i></i>${a.running ? "Opérationnel" : "En pause"}</div></div>`);
     });
-    drawActivity($("#home-activity"), (FIXTURE ? fixtures.activity : state.activity).slice(0, 5));
-    loadChart("LIVE");
-    mountHomeThoughts();
-    ensureThoughtLoops();
+    drawActivity($("#home-activity"), (FIXTURE ? fixtures.activity : state.activity).slice(0,5));
+    loadChart("LIVE"); mountHomeThoughts(); ensureThoughtLoops(); animateNumbers();
   }
 
   async function loadChart(range) {
@@ -633,47 +686,24 @@
 
   function drawActivity(node, rows) {
     if (!node) return;
-    if (!rows || !rows.length) { node.innerHTML = `<p class="empty">Nothing yet tonight</p>`; return; }
+    if (!rows || !rows.length) { node.innerHTML = '<div class="op-card empty-card">Le journal de la nuit est encore vide.</div>'; return; }
     node.innerHTML = rows.map((r) => {
-      const title = r.title || "";
-      const veil = /veil/i.test(title) || /veil/i.test(r.subtitle || "") || r.source === "veil";
-      const badge = veil ? '<span class="veil-badge">Veil</span>' : "";
-      return `<div class="activity-row" data-mint="${r.mint || ""}" data-kind="${r.kind || ""}">
-      <div class="grow"><div class="title">${title}${badge}</div><div class="sub">${r.subtitle || ""}</div></div>
-      <div class="right">${r.value || ""}</div>
-    </div>`;
+      const veil = /veil/i.test(r.title||"") || /veil/i.test(r.subtitle||"") || r.source === "veil";
+      const pos = (state.positions||[]).find((p) => p.mint === r.mint && Math.abs(Date.parse(p.opened_at)-Date.parse(r.ts)) < 180000);
+      const icon = r.kind === "bought" ? "↗" : (r.kind === "stopped" || r.kind === "sold") ? "◎" : "·";
+      return `<button class="activity-row" ${pos ? `data-position="${Number(pos.id)}"` : `data-mint="${esc(r.mint||"")}" data-kind="${esc(r.kind||"")}"`}>
+      <span class="activity-icon">${icon}</span><div class="grow"><div class="title">${esc(r.title||"")}${veil?'<span class="veil-badge">Veil</span>':""}</div><div class="sub">${esc(r.subtitle||"")} · ${timeFR(r.ts)}</div></div>
+      <div class="right">${esc(r.value||"")} <span class="mini-paper">${r.agent === "risk" || r.agent === "executor" ? "SIM" : ""}</span></div></button>`;
     }).join("");
   }
 
   function renderAgents() {
-    const el = $("#view-agents");
-    if (EMPTY) {
-      el.innerHTML = navbar("Agents") + `<div class="screen">${orbRow(defaultAgents())}<p class="empty">Listening for graduations</p></div>`;
-      mountAgentsThoughts();
-      ensureThoughtLoops();
-      return;
-    }
-    const s = FIXTURE ? fixtures.state : state;
-    el.innerHTML = navbar("Agents") + `<div class="screen">${orbRow(s.agents)}<div id="agents-list"></div></div>`;
-    const list = $("#agents-list");
-    (s.agents || defaultAgents()).forEach((a) => {
-      const mode = agentMode(a.name, a.running);
-      const card = document.createElement("div");
-      card.className = "full-card agent-full";
-      card.innerHTML = `<div class="setting-row">
-        <div class="head">${orbHtml(a.name, a.running)}<div>
-          <strong>${a.label}</strong>
-          <div class="orb-status ${mode}">${modeLabel(mode)}</div>
-          <div class="sub">${a.count} ${a.unit}</div>
-        </div></div>
-        ${PLAN_B ? `<span class="sub">via Telegram</span>` : `<button class="btn ghost" data-toggle="${a.name}" style="width:auto;padding:0 16px;margin:0;min-height:44px">${a.running ? "Pause" : "Resume"}</button>`}
-      </div>
-      <div class="feed" data-decisions="${a.name}"><div class="skel" style="height:60px"></div></div>`;
-      list.appendChild(card);
-      loadDecisions(a.name, card.querySelector("[data-decisions]"));
-    });
-    mountAgentsThoughts();
-    ensureThoughtLoops();
+    const el=$("#view-agents");
+    const s=FIXTURE?fixtures.state:state;
+    el.innerHTML=navbar("Agents")+`<div class="screen"><div class="agents-intro"><div><span class="eyebrow">CHAÎNE DE TRADING</span><h2>Cinq agents, une nuit.</h2><p>Une icône s'illumine quand l'agent a travaillé dans les 60 dernières secondes.</p></div></div>${orbRow(s.agents)}<div id="agents-list"></div></div>`;
+    $("#agents-list").innerHTML=(s.agents||defaultAgents()).map((a)=>`<div class="full-card agent-full"><div class="setting-row"><div class="head">${orbHtml(a.name,a.running)}<div><strong>${esc(a.label)}</strong><div class="orb-status ${agentMode(a.name,a.running)}">${modeLabel(agentMode(a.name,a.running))}</div><div class="ask"></div></div></div>${PLAN_B?'<span class="sub">via Telegram</span>':`<button class="btn ghost" data-toggle="${a.name}" style="width:auto;padding:0 16px;margin:0;min-height:44px">${a.running?"Pause":"Reprendre"}</button>`}</div><div class="agent-count"><strong>${a.count}</strong><span>${unitFR(a.name)}</span></div><div class="feed" data-decisions="${a.name}"><div class="skel" style="height:44px"></div></div></div>`).join("")+'<div class="op-card empty-card">Décisions issues de la base locale du desk · aucun raisonnement inventé.</div>';
+    (s.agents||defaultAgents()).forEach(a=>loadDecisions(a.name,$(`[data-decisions="${a.name}"]`)));
+    mountAgentsThoughts(); ensureThoughtLoops();
   }
 
   async function loadDecisions(name, node) {
@@ -683,67 +713,37 @@
       try { const data = await api("/api/agents/" + name + "/decisions"); rows = data.rows || []; }
       catch (e) { rows = []; }
     }
-    if (!rows.length) { node.innerHTML = `<p class="empty">No decisions yet</p>`; return; }
+    if (!rows.length) { node.innerHTML = `<p class="empty">Aucune décision enregistrée</p>`; return; }
     node.innerHTML = rows.map((r) => `<div class="row"><span>${(r.ts || "").slice(11, 16)} ${(r.mint || "").slice(0, 6)} ${r.verdict}</span><span>${r.reason || ""}</span></div>`).join("");
   }
 
   function renderActivity() {
-    const el = $("#view-activity");
-    el.innerHTML = navbar("Activity") + `<div class="screen" id="act-list"></div>`;
-    if (EMPTY) { $("#act-list").innerHTML = `<p class="empty">Nothing yet tonight</p>`; return; }
-    drawActivity($("#act-list"), FIXTURE ? fixtures.activity : state.activity);
+    const el=$("#view-activity");
+    const positions=FIXTURE?[]:(state.positions||[]);
+    el.innerHTML=navbar("Activité")+`<div class="screen"><div class="section-h"><h2>Pipeline trades ${paperBadge()}</h2><span>${positions.length} enregistrés</span></div>
+      ${positions.length?positions.map(positionCard).join(""):'<div class="op-card empty-card">Le scanner travaille. La première position PAPER apparaîtra ici avec toutes ses étapes.</div>'}
+      <div class="section-h"><h2>Journal</h2><span>Base locale</span></div><div id="act-list"></div></div>`;
+    drawActivity($("#act-list"),EMPTY?[]:(FIXTURE?fixtures.activity:state.activity)); animateNumbers();
   }
 
   function renderAccount() {
-    const el = $("#view-account");
-    if (EMPTY) {
-      el.innerHTML = navbar("Account") + `<div class="screen"><p class="empty">Sign in token saved. Waiting for desk data.</p></div>`;
-      return;
-    }
-    const acc = FIXTURE ? fixtures.account : state.account;
-    const sets = FIXTURE ? fixtures.settings : (state.settings || {});
-    const paper = (acc.mode || "PAPER") === "PAPER";
-    const settingKeys = Object.keys(sets).slice(0, 18);
-    const readOnly = PLAN_B;
-    el.innerHTML = navbar("Account") + `<div class="screen">
-      ${paper ? '<span class="pill paper">PAPER</span>' : ""}
-      ${readOnly ? `<div class="setting-row"><span>Mode</span><span>${acc.mode || "PAPER"}</span></div>
-        <p class="empty">Mode, pause and settings are changed in Telegram</p>` : `<div class="setting-row"><span>Mode</span>
-        <div>
-          <button class="btn ghost" id="btn-paper" style="width:auto;display:inline-flex;padding:0 14px;margin:0">PAPER</button>
-          <button class="btn ghost" id="btn-live" style="width:auto;display:inline-flex;padding:0 14px;margin:0">LIVE</button>
-        </div>
-      </div>`}
-      <div class="setting-row"><span>Stack</span><span class="num">${fmtMoney(acc.stack || acc.balance)}</span></div>
-      <a class="setting-row" href="${acc.profile_url || "#"}" target="_blank" rel="noopener"><span>Your FOMO profile</span><span>@${acc.fomo_handle || "Araos"}</span></a>
-      <button class="setting-row" id="invite" style="width:100%"><span>Invite a friend</span><span>Share</span></button>
-      ${readOnly ? `<div class="setting-row"><span>Notifications</span><span>Telegram only</span></div>` : `<div class="setting-row"><span>Telegram</span><span>connected</span></div>
-      <button class="btn ghost" id="test-push">Send test push</button>`}
-      <h2>Settings</h2>
-      ${settingKeys.map((k) => readOnly
-        ? `<div class="setting-row"><span>${k}</span><span class="num">${sets[k]}</span></div>`
-        : `<div class="setting-row"><span>${k}</span><input data-key="${k}" value="${sets[k]}"></div>`).join("")}
-      <p class="empty">${(acc.liveGate && acc.liveGate.message) || ""}</p>
+    const el=$("#view-account");
+    const acc=FIXTURE?fixtures.account:state.account, sets=FIXTURE?fixtures.settings:(state.settings||{});
+    const paper=!!(state.goal ? "PAPER" : ((acc.mode||"PAPER")==="PAPER"));
+    const hidden=new Set(["desk.mode","desk.rpc_url","desk.force_off"]);
+    const keys=Object.keys(sets).filter(k=>!hidden.has(k)).slice(0,14);
+    el.innerHTML=navbar("Compte")+`<div class="screen"><div class="account-mode">${paperBadge()}<h2>Desk de simulation</h2><p>Aucun argent réel engagé. Les chiffres proviennent des trades PAPER enregistrés.</p></div>
+      ${goalHtml(FIXTURE?{}:state)}
+      <div class="setting-row"><span>Solde PAPER</span><span class="num">${fmtMoney(acc.stack??acc.balance)} ${paperBadge()}</span></div>
+      <a class="setting-row" href="${esc(acc.profile_url||"#")}" target="_blank" rel="noopener"><span>Ton profil FOMO</span><span>@${esc(acc.fomo_handle||"Araos")}</span></a>
+      <button class="setting-row" id="invite" style="width:100%"><span>Inviter un ami</span><span>Partager</span></button>
+      <div class="setting-row"><span>Notifications</span><span>${PLAN_B?"Telegram":"Connectées"}</span></div>
+      <h2>Réglages</h2>${keys.map(k=>PLAN_B?`<div class="setting-row"><span>${esc(k)}</span><span class="num">${esc(sets[k])}</span></div>`:`<div class="setting-row"><span>${esc(k)}</span><input data-key="${esc(k)}" value="${esc(sets[k])}"></div>`).join("")}
+      ${PLAN_B?'<p class="empty">Modifie les réglages via Telegram.</p>':""}
+      <p class="empty">${esc((acc.liveGate&&acc.liveGate.message)||"")}</p>
     </div>`;
-    const invite = $("#invite");
-    if (invite) invite.onclick = () => {
-      const url = acc.signup_url;
-      if (navigator.share) navigator.share({ title: "FOMO", url });
-      else { navigator.clipboard.writeText(url); invite.querySelector("span:last-child").textContent = "Link copied"; }
-    };
-    const live = $("#btn-live");
-    if (live) live.onclick = async () => {
-      const typed = prompt("Type LIVE to confirm");
-      if (typed !== "LIVE") return;
-      try { await api("/api/mode", { method: "POST", body: JSON.stringify({ mode: "LIVE", confirm: "LIVE" }) }); await boot(); }
-      catch (e) { alert((e && e.message) || "LIVE refused"); }
-    };
-    $$("input[data-key]").forEach((inp) => {
-      inp.onchange = async () => {
-        try { await api("/api/settings", { method: "POST", body: JSON.stringify({ key: inp.dataset.key, value: inp.value }) }); }
-        catch (e) { alert(e.message); }
-      };
-    });
+    const invite=$("#invite"); if(invite) invite.onclick=async()=>{const url=acc.signup_url;if(navigator.share)await navigator.share({title:"FOMO",url});else{await navigator.clipboard.writeText(url);invite.querySelector("span:last-child").textContent="Lien copié";}};
+    $$('input[data-key]').forEach(inp=>{inp.onchange=async()=>{try{await api("/api/settings",{method:"POST",body:JSON.stringify({key:inp.dataset.key,value:inp.value})});}catch(e){showError("Réglage refusé : "+e.message);}};});
   }
 
   function renderAuditor(data) {
@@ -762,28 +762,49 @@
   }
 
   function renderCoin(data) {
-    const el = $("#view-coin");
-    if (EMPTY) {
-      el.innerHTML = navbar("Coin") + `<div class="screen"><p class="empty">No position</p></div>`;
-      return;
-    }
-    const c = data || fixtures.coin;
-    const paper = true;
-    const pos = c.position;
-    el.innerHTML = navbar(`${c.name || c.symbol || "Coin"} ${paper ? '<span class="pill paper">PAPER</span>' : ""}`) +
-      `<div class="screen">
-        <div class="sub">${c.symbol || ""} · Solana ${c.shield ? "· " + c.shield : ""}</div>
-        <div class="price num">${c.price != null ? c.price : "—"}</div>
-        <canvas id="coin-chart" class="chart-wrap" style="height:220px"></canvas>
-        <div class="setting-row"><span>Market cap</span><span>${c.stats && c.stats.marketCap != null ? fmtMoney(c.stats.marketCap) : "—"}</span></div>
-        <div class="setting-row"><span>Liquidity</span><span>${c.stats && c.stats.liquidity != null ? fmtMoney(c.stats.liquidity) : "—"}</span></div>
-        <div class="setting-row"><span>Holders</span><span>${c.holders != null ? c.holders : "n/a"}</span></div>
-        ${pos ? `<div class="card"><div>Your position · ${fmtMoney(pos.size_usd)} in · Executor</div>
-          <div class="sub">stop -${pos.stop_pct}%</div></div>` : ""}
-        <a class="btn" href="${c.coin_url}" target="_blank" rel="noopener">${pos ? "Sell on FOMO" : "Buy on FOMO"}</a>
-      </div>`;
-    const canvas = $("#coin-chart");
-    if (canvas) DeskCharts.candles(canvas, c.candles || []);
+    const el=$("#view-coin");
+    if (EMPTY || !data && !FIXTURE) { el.innerHTML=navbar("Position")+'<div class="screen"><p class="empty">Aucune position sélectionnée.</p></div>'; return; }
+    const c=data||fixtures.coin, p=c.position||{};
+    el.innerHTML=navbar("Position")+`<div class="screen"><p class="empty">Chargement du dossier réel…</p></div>`;
+  }
+
+  function pipelineHtml(stages) {
+    return `<div class="pipeline">${(stages||[]).map((st,i)=>`<div class="pipeline-step ${st.done?"done":""}"><div class="step-dot">${st.done?"✓":i+1}</div><div><strong>${esc(st.label)}${st.value?" · "+esc(st.value):""}</strong><span>${st.done?timeFR(st.ts):"En attente"}</span></div></div>`).join("")}</div>`;
+  }
+  function moneyPrice(p) { return p==null ? "—" : Number(p).toPrecision(6)+" $"; }
+  function displayPrice(p) {
+    if (p==null || !Number.isFinite(Number(p))) return "—";
+    const n=Number(p);
+    return (Math.abs(n)<0.001?n.toExponential(3):n.toFixed(6))+" $";
+  }
+  function whyHtml(c) {
+    const w=c.why||{};
+    const layers=(w.layers||[]).map(l=>`<div class="audit-layer"><span class="audit-check ${l.pass===false?"bad":l.pass?"":"pending"}">${l.pass===false?"!":l.pass?"✓":"·"}</span><div><strong>${esc(l.name)}</strong><span>${esc(l.value==null?"Non enregistré":l.value)}</span></div><small>${esc(l.source||"")}</small></div>`).join("");
+    return `<section class="op-card"><div class="op-heading"><h3>Pourquoi acheté</h3>${paperBadge()}</div><p class="tiny-hint">Contrôles réellement enregistrés par Auditor et Analyst.</p>${layers||'<p class="empty">Audit indisponible pour ce trade.</p>'}<div class="why-summary"><div><span>Score Analyst</span><strong>${w.analystScore==null?"—":w.analystScore}</strong></div><div><span>Liquidité</span><strong>${w.liquidity==null?"—":Number(w.liquidity).toLocaleString("fr-FR")+" $"}</strong></div><div><span>Origine</span><strong>${w.source==="veil"?"Veil":esc(w.source||"—")}</strong>${w.source==="veil"?'<span class="veil-badge">Veil</span>':""}</div></div></section>`;
+  }
+  function renderPosition(c) {
+    const el=$("#view-coin"),p=c.position;
+    if(!p){el.innerHTML=navbar("Position")+'<div class="screen"><p class="empty">Cette position est introuvable.</p></div>';return;}
+    const open=!p.closed_at,last=c.prices&&c.prices.length?c.prices[c.prices.length-1]:null;
+    const pnl=p.pnl_usd;
+    el.innerHTML=navbar("Trade "+(c.symbol||"#"+p.id),'<button class="back-button" data-go="activity" aria-label="Retour">‹</button>')+`<div class="screen position-detail">
+      <div class="detail-hero"><div><span class="eyebrow">${open?"POSITION OUVERTE":"TRADE CLÔTURÉ"}</span><h1>${esc(c.name||c.symbol||"Position")} <small>${esc(c.symbol||"")}</small></h1></div>${paperBadge()}</div>
+      <div class="detail-price"><span>${last?"Dernier prix enregistré":"Prix d'entrée"}</span><strong>${displayPrice(last?last.price:p.entry_price)}</strong></div>
+      <div class="op-card chart-card"><canvas id="position-chart" class="chart-wrap"></canvas><div class="chart-legend"><span class="price-key">─ Prix réel</span><span class="entry-key">┄ Entrée</span><span class="stop-key">┄ Stop Risk</span></div>${!(c.prices||[]).length?'<p class="empty">Historique de prix indisponible pour cette position. Seuls les chiffres enregistrés sont affichés.</p>':""}${c.historyLimited?'<p class="tiny-hint">Ce trade est antérieur à l’enregistrement détaillé du stop : seul son niveau initial est retracé.</p>':""}</div>
+      <div class="metrics-grid"><div><span>Entrée</span><strong>${displayPrice(p.entry_price)}</strong><small>${timeFR(p.opened_at)}</small></div><div><span>Pic enregistré</span><strong>${displayPrice(p.peak_price)}</strong><small>${c.stops&&c.stops.some(s=>s.trail_active)?"Stop suiveur activé":"Stop suiveur non activé"}</small></div><div><span>Stop actuel / final</span><strong>${displayPrice(p.stop_price)}</strong><small>−${Number(p.stop_pct||0).toFixed(1).replace(".",",")} % initial</small></div><div><span>${open?"Montant PAPER":"Sortie"}</span><strong class="${pnl>0?"up":pnl<0?"down":""}">${open?Number(p.size_usd).toFixed(2).replace(".",",")+" $":displayPrice(p.exit_price)}</strong><small>${open?paperBadge():esc(EXIT_LABELS[p.exit_reason]||p.exit_reason||"—")+" · "+timeFR(p.closed_at)}</small></div></div>
+      ${!open?`<div class="op-card pnl-banner ${pnl>=0?"positive":"negative"}"><div><span>PNL RÉEL PAPER</span><strong>${pnl==null?"—":(pnl>=0?"+":"−")+Math.abs(pnl).toFixed(2).replace(".",",")+" $"}</strong></div><div><span>Frais simulés</span><strong>${Number(p.fees_usd||0).toFixed(2).replace(".",",")+" $"}</strong></div></div>`:paperBadge()}
+      <section class="op-card"><div class="op-heading"><h3>Pipeline du trade</h3><span class="eyebrow">JOURNAL RÉEL</span></div>${pipelineHtml(c.pipeline)}</section>
+      ${whyHtml(c)}
+      <a class="btn ghost" href="${esc(c.coin_url)}" target="_blank" rel="noopener">Ouvrir ce coin sur FOMO ↗</a>
+    </div>`;
+    requestAnimationFrame(()=>DeskCharts.positionChart($("#position-chart"),{points:c.prices||[],stops:c.stops||[],entry:p.entry_price,position:p}));
+  }
+
+  async function openPosition(id) {
+    currentPositionId=Number(id); setView("coin");
+    const node=$("#view-coin"); node.innerHTML=navbar("Trade")+'<div class="screen"><div class="skel" style="height:140px"></div></div>';
+    try { const c=FIXTURE?fixtures.position:await api("/api/position/"+currentPositionId); renderPosition(c); }
+    catch(e) { node.innerHTML=navbar("Trade")+'<div class="screen"><p class="empty">Dossier indisponible. Les anciennes positions sans prix ne sont pas reconstituées.</p></div>'; }
   }
 
   async function openAuditor(mint) {
@@ -797,11 +818,20 @@
     currentMint = mint;
     setView("coin");
     if (FIXTURE || EMPTY) { renderCoin(); return; }
-    try { renderCoin(await api("/api/coin/" + mint)); }
+    try { const p=(state.positions||[]).find(x=>x.mint===mint); if(p){await openPosition(p.id);return;} renderCoin(await api("/api/coin/" + mint)); }
     catch (e) { showError("No snapshot for this coin · retry later"); }
   }
 
+  document.body.addEventListener("change", async (e) => {
+    const select=e.target.closest("#goal-multiplier");
+    if(!select||PLAN_B) return;
+    try { await api("/api/settings",{method:"POST",body:JSON.stringify({key:"desk.night_goal",value:select.value})}); await boot(); }
+    catch(err){showError("Objectif non modifié : "+err.message);}
+  });
+
   document.body.addEventListener("click", (e) => {
+    const position=e.target.closest("[data-position]");
+    if(position){openPosition(position.dataset.position);return;}
     const tab = e.target.closest("[data-tab]");
     if (tab) { setView(tab.dataset.tab); paint(); return; }
     const go = e.target.closest("[data-go]");
@@ -938,6 +968,8 @@
       state.account = acc || {};
       const st = await api("/api/settings");
       state.settings = (st && st.settings) || {};
+      const positions = await api("/api/positions");
+      state.positions = (positions && positions.rows) || [];
       state.lastUpdate = s.publishedAt ? new Date(s.publishedAt) : new Date();
       state.online = true;
       if (!FORCE_ERROR) showError(PLAN_B ? "Snapshot · " + state.lastUpdate.toLocaleTimeString("fr-FR", {timeZone: "Europe/Paris"}) + " Europe/Paris · refresh ~6 min" : "");
@@ -961,7 +993,7 @@
     else if (view === "activity") renderActivity();
     else if (view === "account") renderAccount();
     else if (view === "auditor") { if (FIXTURE || EMPTY) renderAuditor(); else openAuditor(currentMint); }
-    else if (view === "coin") { if (FIXTURE || EMPTY) renderCoin(); else openCoin(currentMint); }
+    else if (view === "coin") { openPosition(currentPositionId); }
     else { view = "home"; renderHome(); }
   }
 
