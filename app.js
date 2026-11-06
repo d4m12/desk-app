@@ -921,8 +921,8 @@
   let retry = 3;
   function retryError() {
     state.online = false;
-    const t = state.lastUpdate ? state.lastUpdate.toLocaleTimeString() : "never";
-    showError(`Desk offline · retrying in ${retry}s · last update ${t}`);
+    const t = state.lastUpdate ? state.lastUpdate.toLocaleTimeString("fr-FR") : "jamais";
+    showError(`Desk hors ligne · nouvel essai dans ${retry} s · dernière mise à jour ${t}`);
     setTimeout(() => { retry = Math.min(30, retry + 2); boot(); }, retry * 1000);
   }
 
