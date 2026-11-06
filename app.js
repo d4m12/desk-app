@@ -42,7 +42,7 @@
     balance: 0,
     todayPct: 0,
     multiplier: 1,
-    mode: "PAPER",
+    mode: "PAPER", profile: "medium", profileLabel: "Medium — équilibré",
     agents: [],
     activity: [],
     account: {},
@@ -412,6 +412,7 @@
   const fixtures = {
     state: {
       balance: 247.32, todayPct: 23.66, multiplier: 1.2366, mode: "PAPER", paper: true,
+      profile: "medium", profileLabel: "Medium — équilibré",
       buysPaused: false, fomo_handle: "Araos",
       agents: [
         { name: "scanner", label: "Scanner", running: true, count: 12, unit: "pools" },
@@ -530,6 +531,33 @@
       ${forceOffPending ? '<p class="force-hint">Retape FORCE OFF pour confirmer (clôture PAPER / liens Sell en LIVE)</p>' : ""}`;
   }
 
+  let unsafePending = false;
+  function modeBarHtml(s) {
+    const cur = (s && s.profile) || "medium";
+    const labels = {
+      safe: "🛡 Safe",
+      medium: "⚖️ Medium",
+      unsafe: "🔥 Unsafe",
+    };
+    const hint = cur === "unsafe"
+      ? '<p class="mode-hint">⚠️ Unsafe : beaucoup plus de trades et de pertes possibles. Tu es seul responsable.</p>'
+      : (unsafePending
+        ? '<p class="mode-hint">Retape Unsafe pour confirmer — tu es seul responsable des gains et pertes.</p>'
+        : `<p class="mode-hint">Mode : ${s && s.profileLabel ? s.profileLabel : cur}</p>`);
+    if (PLAN_B) {
+      return `<div class="mode-bar">
+        ${["safe","medium","unsafe"].map((k) =>
+          `<button class="mode-btn ${k} ${k===cur?"on":""}" disabled>${labels[k]}</button>`
+        ).join("")}
+      </div>${hint}`;
+    }
+    return `<div class="mode-bar">
+      ${["safe","medium","unsafe"].map((k) =>
+        `<button class="mode-btn ${k} ${k===cur?"on":""} ${unsafePending && k==="unsafe"?"pending":""}" data-profile="${k}">${labels[k]}${unsafePending && k==="unsafe"?" ✓":""}</button>`
+      ).join("")}
+    </div>${hint}`;
+  }
+
   function renderHome() {
     const el = $("#view-home");
     if (EMPTY) {
@@ -537,6 +565,7 @@
         <div class="balance">$0.00 <span class="pill paper">PAPER</span></div>
         <div class="subrow"><span>+0.00%</span></div>
         ${forceBarHtml({ forceOff: false })}
+        ${modeBarHtml({ profile: "medium", profileLabel: "Medium — équilibré" })}
         <canvas id="home-chart" class="chart-wrap"></canvas>
         <p class="empty">Waiting for the first trade</p>
         <div class="section-h"><h2>Agents · 5 running</h2></div>
@@ -560,6 +589,7 @@
           <span class="pill green">${Number(s.multiplier || 1).toFixed(2)}×</span>
         </div>
         ${forceBarHtml(s)}
+        ${modeBarHtml(s)}
         <canvas id="home-chart" class="chart-wrap"></canvas>
         <div class="ranges">${["LIVE","1H","4H","1D","1W","ALL"].map((r) => `<button data-range="${r}" class="${r==="LIVE"?"on":""}">${r}</button>`).join("")}</div>
         <div class="section-h"><h2>Agents · 5 running</h2></div>
@@ -604,10 +634,15 @@
   function drawActivity(node, rows) {
     if (!node) return;
     if (!rows || !rows.length) { node.innerHTML = `<p class="empty">Nothing yet tonight</p>`; return; }
-    node.innerHTML = rows.map((r) => `<div class="activity-row" data-mint="${r.mint || ""}" data-kind="${r.kind || ""}">
-      <div class="grow"><div class="title">${r.title || ""}</div><div class="sub">${r.subtitle || ""}</div></div>
+    node.innerHTML = rows.map((r) => {
+      const title = r.title || "";
+      const veil = /veil/i.test(title) || /veil/i.test(r.subtitle || "") || r.source === "veil";
+      const badge = veil ? '<span class="veil-badge">Veil</span>' : "";
+      return `<div class="activity-row" data-mint="${r.mint || ""}" data-kind="${r.kind || ""}">
+      <div class="grow"><div class="title">${title}${badge}</div><div class="sub">${r.subtitle || ""}</div></div>
       <div class="right">${r.value || ""}</div>
-    </div>`).join("");
+    </div>`;
+    }).join("");
   }
 
   function renderAgents() {
@@ -787,6 +822,32 @@
       if (PLAN_B) return;
       const name = tog.dataset.toggle;
       api("/api/agents/" + name + "/" + (tog.textContent.trim() === "Pause" ? "pause" : "resume"), { method: "POST" });
+    }
+    const profileBtn = e.target.closest("[data-profile]");
+    if (profileBtn) {
+      if (PLAN_B) { showError("Plan B lecture seule — utilise Telegram · /mode"); return; }
+      const target = profileBtn.dataset.profile;
+      const body = { profile: target };
+      if (target === "unsafe") {
+        if (!unsafePending) {
+          unsafePending = true;
+          paint();
+          return;
+        }
+        body.confirm = "unsafe";
+      }
+      unsafePending = false;
+      api("/api/profile", { method: "POST", body: JSON.stringify(body) })
+        .then((res) => {
+          if (res && res.needsConfirm) {
+            unsafePending = true;
+            paint();
+            return;
+          }
+          boot();
+        })
+        .catch((err) => showError(String(err.message || err)));
+      return;
     }
     const force = e.target.closest("[data-force]");
     if (force) {

@@ -328,3 +328,19 @@ a { color: #f5a9ff; text-decoration: none; }
   .thought-bubble .tb-cursor { display: none !important; animation: none !important; }
   .thought-bubble.is-on { opacity: 1; }
 }
+
+/* Risk profile switch (Safe / Medium / Unsafe) */
+.mode-bar { display:flex; gap:8px; margin: 0 0 10px; flex-wrap:wrap; }
+.mode-btn {
+  flex:1; min-width:90px; border:none; border-radius:12px; padding:10px 8px;
+  font-size:12px; font-weight:600; background:#1c1c1e; color:#fff; cursor:pointer;
+}
+.mode-btn.on { outline:2px solid #64d2ff; outline-offset:1px; background:#0a84ff33; }
+.mode-btn.safe.on { outline-color:#30d158; background:#30d15822; }
+.mode-btn.unsafe.on { outline-color:#ff453a; background:#ff453a22; }
+.mode-hint { font-size:11px; color:var(--secondary); margin:0 0 10px; line-height:1.35; }
+.veil-badge {
+  display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.04em;
+  background:#bf5af2; color:#fff; border-radius:6px; padding:2px 6px; margin-left:6px;
+  vertical-align:middle;
+}
