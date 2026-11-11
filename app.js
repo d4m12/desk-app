@@ -394,6 +394,7 @@
     if (pm) return planBFile("position/" + encodeURIComponent(pm[1]) + ".json");
     if (raw === "/api/account") return planBFile("account.json");
     if (raw === "/api/settings") return planBFile("settings.json");
+    if (raw === "/api/live") return planBFile("live.json");
     let m = raw.match(/^\/api\/coin\/(.+)$/);
     if (m) return planBFile("coin/" + encodeURIComponent(m[1]) + ".json");
     m = raw.match(/^\/api\/audit\/(.+)$/);
@@ -479,6 +480,109 @@
       risk: [{ ts: "21:18", mint: currentMint, verdict: "trail", reason: "trail", coin_url: "#" }],
     },
   };
+
+  // ---- live channel (Direct) with Pages snapshot fallback (Différé)
+  const LIVE = { active: false, url: null, token: null, lastMsg: 0, ctrl: null, fails: 0, sig: "", connecting: false, paintAt: 0 };
+  function feedBadge() {
+    if (!PLAN_B) return '<span class="live-label"><i></i> TEMPS RÉEL</span>';
+    return LIVE.active
+      ? '<span class="live-label feed-badge direct" id="feed-badge"><i></i> Direct · <span id="snap-age">' + snapAgeText() + '</span></span>'
+      : '<span class="live-label feed-badge deferred" id="feed-badge"><i></i> Différé · <span id="snap-age">' + snapAgeText() + '</span></span>';
+  }
+  function snapAgeText() {
+    const t = state.lastUpdate ? state.lastUpdate.getTime() : 0;
+    if (!t) return "—";
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    return s < 60 ? s + " s" : s < 3600 ? Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") : Math.floor(s / 3600) + " h";
+  }
+  function tickFeedBadge() {
+    const b = $("#feed-badge");
+    if (!b) return;
+    const want = LIVE.active ? "direct" : "deferred";
+    if (!b.classList.contains(want)) { b.outerHTML = feedBadge(); return; }
+    const a = $("#snap-age"); if (a) a.textContent = snapAgeText();
+  }
+  async function decryptEnvelope(envelope) {
+    await initPlanBCrypto();
+    if (!envelope || envelope.v !== 1 || !envelope.iv || !envelope.data) throw new Error("Invalid envelope");
+    const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    const plaintext = await crypto.subtle.decrypt({name: "AES-GCM", iv: bytes(envelope.iv)}, planBKey, bytes(envelope.data));
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+  function applyLive(p) {
+    if (!p || !p.state) return;
+    Object.assign(state, p.state);
+    if (Array.isArray(p.positions)) state.positions = p.positions;
+    if (Array.isArray(p.activity)) state.activity = p.activity;
+    state.lastUpdate = new Date(p.liveAt || Date.now()); state.online = true;
+    updateHeartbeats(p.state.agents, p.liveAt);
+    const sig = JSON.stringify([p.state.balance, p.state.todayPct, p.positions, (p.activity || []).slice(0, 5), (p.state.agents || []).map((a) => [a.name, a.count, a.running]), p.state.forceOff, p.state.profile]);
+    const typing = document.activeElement && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+    if (sig !== LIVE.sig && !typing && ["home", "activity", "agents"].includes(view) && Date.now() - LIVE.paintAt > 1500) {
+      LIVE.sig = sig; LIVE.paintAt = Date.now();
+      const y = window.scrollY; paint(); window.scrollTo(0, y);
+    }
+    tickFeedBadge();
+  }
+  async function discoverLive() {
+    try {
+      const j = await api("/api/live");
+      LIVE.url = j && j.url ? String(j.url).replace(/\/$/, "") : null;
+      LIVE.token = j && j.token ? String(j.token) : null;
+    } catch (e) { LIVE.url = null; LIVE.token = null; }
+  }
+  function liveDown() {
+    const was = LIVE.active;
+    LIVE.active = false; LIVE.connecting = false;
+    if (LIVE.ctrl) { try { LIVE.ctrl.abort(); } catch (e) {} LIVE.ctrl = null; }
+    if (was) { tickFeedBadge(); boot(); }
+  }
+  async function connectLive() {
+    if (!PLAN_B || FIXTURE || EMPTY || LIVE.connecting || LIVE.active || document.hidden) return;
+    LIVE.connecting = true;
+    try {
+      if (!LIVE.url || LIVE.fails >= 2) { await discoverLive(); LIVE.fails = 0; }
+      if (!LIVE.url || !LIVE.token || !/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(LIVE.url)) { LIVE.connecting = false; return; }
+      const ctrl = new AbortController(); LIVE.ctrl = ctrl;
+      const res = await fetch(LIVE.url + "/live", { cache: "no-store", headers: { Authorization: "Bearer " + LIVE.token }, signal: ctrl.signal });
+      if (!res.ok || !res.body) throw new Error("live http " + res.status);
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+      LIVE.lastMsg = Date.now(); LIVE.connecting = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          LIVE.lastMsg = Date.now();
+          const data = block.split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("");
+          if (!data) continue;
+          try {
+            const p = await decryptEnvelope(JSON.parse(data));
+            if (!LIVE.active) { LIVE.active = true; LIVE.fails = 0; LIVE.sig = ""; showError(""); }
+            applyLive(p);
+          } catch (e) {}
+        }
+      }
+      throw new Error("live closed");
+    } catch (e) {
+      LIVE.fails += 1;
+      liveDown();
+    }
+  }
+  setInterval(() => {
+    tickFeedBadge();
+    if (LIVE.active && Date.now() - LIVE.lastMsg > 20000) liveDown();
+  }, 1000);
+  setInterval(() => { if (!LIVE.active) connectLive(); }, 8000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    boot();
+    if (!LIVE.active) connectLive();
+  });
+  window.addEventListener("pageshow", () => { boot(); connectLive(); });
+  window.addEventListener("focus", () => { if (!LIVE.active) { boot(); connectLive(); } });
 
   function showError(msg) {
     const el = $("#error-banner");
@@ -611,7 +715,7 @@
     if (!ts) return "—";
     return new Date(ts).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"});
   }
-  const EXIT_LABELS = {stop:"stop",trail:"stop suiveur",timeout:"temps limite",pulled:"liquidité retirée",force_off:"FORCE OFF",take_profit:"prise de profit",partial_stop:"partiel + stop",partial_trail:"partiel + stop suiveur",partial_timeout:"partiel + temps limite",partial_pulled:"partiel + liquidité retirée",partial_force_off:"partiel + FORCE OFF",partial_take_profit:"partiel + prise de profit"};
+  const EXIT_LABELS = {stop:"stop",trail:"stop suiveur",timeout:"temps limite",pulled:"liquidité retirée",force_off:"FORCE OFF",take_profit:"prise de profit",partial_stop:"partiel + stop",partial_trail:"partiel + stop suiveur",partial_timeout:"partiel + temps limite",partial_pulled:"partiel + liquidité retirée",partial_force_off:"partiel + FORCE OFF",partial_take_profit:"partiel + prise de profit",bad_wallet:"wallet à éviter (Veil)",partial_bad_wallet:"partiel + wallet à éviter"};
   function positionCard(p) {
     const open = !p.closed_at && ["open","exiting"].includes(p.status);
     const pnl = p.pnl_usd;
@@ -627,6 +731,13 @@
     return Number(n).toPrecision(3);
   }
   function unitFR(name) { return {scanner:"coins scannés",auditor:"coins audités",analyst:"scores",executor:"trades",risk:"sorties"}[name] || ""; }
+  function precurveCard(rows) {
+    rows = rows || [];
+    const lab = { pumpfun_precurve: "pump.fun", bonk_precurve: "bonk.fun" };
+    const body = rows.length ? rows.map((r) => `<div class="status-line"><i></i>${esc(lab[r.source] || r.source)} · ${r.n} trades · ${r.open_n || 0} ouverts · ${(Number(r.pnl)||0).toFixed(2).replace(".",",")} $ · impact ${(Number(r.avg_entry_impact)||0).toFixed(2).replace(".",",")} %</div>`).join("") : '<div class="status-line"><i></i>Aucun trade courbe pour le moment</div>';
+    return `<div class="op-card"><div class="op-heading"><h3>Courbe avant migration ${paperBadge()}</h3><span class="eyebrow">SÉPARÉ</span></div>${body}</div>`;
+  }
+
   function renderHome() {
     const el = $("#view-home");
     if (EMPTY) {
@@ -635,7 +746,7 @@
     }
     const s = FIXTURE ? fixtures.state : state;
     const positions = FIXTURE ? [] : (s.positions || []);
-    el.innerHTML = navbar("Grok Bot ›", '<span class="live-label"><i></i> TEMPS RÉEL</span>') +
+    el.innerHTML = navbar("Grok Bot ›", feedBadge()) +
       `<div class="home-pad">
         <div class="eyebrow">SOLDE DE LA NUIT</div>
         <div class="balance num">${moneyOdo(s.balance)} <span class="balance-badge">${paperBadge()}</span></div>
@@ -650,6 +761,7 @@
         ${orbRow(s.agents)}
         <div class="op-card scan-card"><span class="scan-icon">✦</span><div><strong>${Number((s.agents.find((a)=>a.name==="scanner")||{}).count || 0)}</strong> <span>coins scannés cette nuit</span></div><span class="pulse-line"></span></div>
         <div class="carousel" id="carousel"></div>
+        ${precurveCard(s.precurve)}
         <div class="section-h"><h2>Positions <small>${paperBadge()}</small></h2><span data-go="activity">Historique</span></div>
         <div class="positions-list">${positions.length ? positions.slice(0,5).map(positionCard).join("") : '<div class="op-card empty-card">Aucun trade PAPER ouvert ou clôturé pour le moment.</div>'}</div>
         <div class="section-h"><h2>Activité</h2><span data-go="activity">Tout voir</span></div>
@@ -940,7 +1052,11 @@
     setTimeout(() => { retry = Math.min(30, retry + 2); boot(); }, retry * 1000);
   }
 
+  let bootAt = 0;
   async function boot() {
+    if (PLAN_B && LIVE.active) return; // Direct feed is fresher than the Pages snapshot
+    if (Date.now() - bootAt < 3000) return;
+    bootAt = Date.now();
     if (FORCE_ERROR) showError("Desk hors ligne · nouvel essai dans 5 s");
     if (FIXTURE || EMPTY) {
       Object.assign(state, fixtures.state); state.activity=fixtures.activity; state.account=fixtures.account; state.settings=fixtures.settings;
@@ -955,7 +1071,7 @@
       } else Object.assign(state,s);
       state.lastUpdate=s.publishedAt?new Date(s.publishedAt):new Date();state.online=true;
       updateHeartbeats(s.agents, s.publishedAt);
-      if(!FORCE_ERROR)showError(PLAN_B?"Snapshot · "+state.lastUpdate.toLocaleTimeString("fr-FR",{timeZone:"Europe/Paris"})+" Europe/Paris · actualisation chiffrée":"");
+      if(!FORCE_ERROR)showError(PLAN_B?"Différé · snapshot de "+state.lastUpdate.toLocaleTimeString("fr-FR",{timeZone:"Europe/Paris"})+" (heure de Paris) · chiffré":"");
       retry=3;
       (state.agents||[]).forEach(a=>{
         const ts=a.last&&a.last.ts;if(!ts)return;
@@ -983,5 +1099,5 @@
   boot();
   connectStream();
   setInterval(syncOrbs, 800);
-  if (PLAN_B && !FIXTURE && !EMPTY) setInterval(boot, 30000);
+  if (PLAN_B && !FIXTURE && !EMPTY) { setInterval(boot, 25000); connectLive(); }
 })();

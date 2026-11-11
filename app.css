@@ -399,3 +399,5 @@ button { cursor:pointer; }
 .agent-orb.is-online .orb-ring { animation: spinring 7s linear infinite; opacity: 0.45; }
 .agent-orb.is-online .orb-sleep { display: none; }
 .orb-status.online { color: var(--lime, #b6f36b); }
+.feed-badge.direct i{background:var(--lime);box-shadow:0 0 9px var(--lime)}
+.feed-badge.deferred{color:rgba(255,200,120,.8)}.feed-badge.deferred i{background:#f5a524;box-shadow:0 0 7px #f5a524;animation:none}
