@@ -286,16 +286,30 @@
     }
   }
 
+  // Heartbeat freshness: measured against the snapshot time (the Pages snapshot can be ~6-16 min old).
+  const HB_FRESH_MS = 5 * 60 * 1000;
+  const SNAPSHOT_MAX_AGE_MS = 20 * 60 * 1000;
+  const hbOnline = {};
+  function updateHeartbeats(agents, publishedAt) {
+    const ref = publishedAt ? Date.parse(publishedAt) : Date.now();
+    const snapOk = !Number.isNaN(ref) && (Date.now() - ref) < SNAPSHOT_MAX_AGE_MS;
+    (agents || []).forEach((a) => {
+      const hb = a && a.heartbeat ? Date.parse(a.heartbeat) : NaN;
+      hbOnline[a.name] = snapOk && !Number.isNaN(hb) && (ref - hb) < HB_FRESH_MS;
+    });
+  }
   function agentMode(name, running) {
     if (running === false) return "paused";
     if ((liveUntil[name] || 0) > Date.now()) return "working";
+    if (hbOnline[name]) return "online";
     return "idle";
   }
 
   function modeLabel(mode) {
     if (mode === "working") return "Réfléchit";
     if (mode === "paused") return "En pause";
-    return "Veille";
+    if (mode === "online") return "En ligne";
+    return "Sans signal";
   }
 
   function defaultAgents() {
@@ -333,7 +347,7 @@
       const name = el.dataset.orb;
       const running = el.dataset.running !== "0";
       const mode = agentMode(name, running);
-      el.classList.remove("is-idle", "is-working", "is-paused");
+      el.classList.remove("is-idle", "is-working", "is-paused", "is-online");
       el.classList.add("is-" + mode);
       const wrap = el.closest(".orb-mini, .agent-card-head, .head, .agent-full");
       const lab = wrap && wrap.querySelector(".orb-status");
@@ -940,6 +954,7 @@
         state.activity=results[0].rows||[];state.account=results[1]||{};state.settings=results[2].settings||{};state.positions=results[3].rows||[];
       } else Object.assign(state,s);
       state.lastUpdate=s.publishedAt?new Date(s.publishedAt):new Date();state.online=true;
+      updateHeartbeats(s.agents, s.publishedAt);
       if(!FORCE_ERROR)showError(PLAN_B?"Snapshot · "+state.lastUpdate.toLocaleTimeString("fr-FR",{timeZone:"Europe/Paris"})+" Europe/Paris · actualisation chiffrée":"");
       retry=3;
       (state.agents||[]).forEach(a=>{
