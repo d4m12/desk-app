@@ -597,7 +597,7 @@
     if (!ts) return "—";
     return new Date(ts).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"});
   }
-  const EXIT_LABELS = {stop:"stop",trail:"stop suiveur",timeout:"temps limite",pulled:"liquidité retirée",force_off:"FORCE OFF",take_profit:"prise de profit"};
+  const EXIT_LABELS = {stop:"stop",trail:"stop suiveur",timeout:"temps limite",pulled:"liquidité retirée",force_off:"FORCE OFF",take_profit:"prise de profit",partial_stop:"partiel + stop",partial_trail:"partiel + stop suiveur",partial_timeout:"partiel + temps limite",partial_pulled:"partiel + liquidité retirée",partial_force_off:"partiel + FORCE OFF",partial_take_profit:"partiel + prise de profit"};
   function positionCard(p) {
     const open = !p.closed_at && ["open","exiting"].includes(p.status);
     const pnl = p.pnl_usd;
