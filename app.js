@@ -733,9 +733,9 @@
   function unitFR(name) { return {scanner:"coins scannés",auditor:"coins audités",analyst:"scores",executor:"trades",risk:"sorties"}[name] || ""; }
   function precurveCard(rows) {
     rows = rows || [];
-    const lab = { pumpfun_precurve: "pump.fun", bonk_precurve: "bonk.fun" };
+    const lab = { pumpfun_precurve: "pump.fun", bonk_precurve: "bonk.fun", old_revival: "old_revival" };
     const body = rows.length ? rows.map((r) => `<div class="status-line"><i></i>${esc(lab[r.source] || r.source)} · ${r.n} trades · ${r.open_n || 0} ouverts · ${(Number(r.pnl)||0).toFixed(2).replace(".",",")} $ · impact ${(Number(r.avg_entry_impact)||0).toFixed(2).replace(".",",")} %</div>`).join("") : '<div class="status-line"><i></i>Aucun trade courbe pour le moment</div>';
-    return `<div class="op-card"><div class="op-heading"><h3>Courbe avant migration ${paperBadge()}</h3><span class="eyebrow">SÉPARÉ</span></div>${body}</div>`;
+    return `<div class="op-card"><div class="op-heading"><h3>Courbe + revival ${paperBadge()}</h3><span class="eyebrow">SÉPARÉ</span></div>${body}</div>`;
   }
 
   function renderHome() {
